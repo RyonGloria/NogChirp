@@ -1,0 +1,11 @@
+function [singal_out] = filter_3775KHz(lora_set, singnal_in)
+    fn = lora_set.sample_rate; % 采样频率
+    fp = [700e3, 850e3]; % 通带频率
+    fs = [450e3, 900e3]; % 阻带频率
+    rp = 1;
+    rs = 30;
+    wp = fp/(fn/2); % 计算归一化角频率
+    ws = fs/(fn/2);
+    [n, wn] = buttord(wp,ws,rp,rs); % 计算阶数和截止频率
+    [b,a] = butter(n,wn);
+    singal_out = filter(b,a,singnal_in);

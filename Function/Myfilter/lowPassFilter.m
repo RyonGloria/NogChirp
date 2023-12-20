@@ -1,0 +1,13 @@
+function [singalOut] = lowPassFilter(loraSet, signal)
+    fn = loraSet.sample_rate;
+    fp = 100e3;
+    fs = 130e3;
+%     fp = 70e3;
+%     fs = 130e3;
+    Rp = 1;
+    Rs = 30;
+    Wp = fp/(fn/2);
+    Ws = fs/(fn/2);
+    [n, Wn] = buttord(Wp,Ws,Rp,Rs); % 计算阶数和截止频率
+    [b,a] = butter(n,Wn);
+    singalOut = filter(b,a,signal);

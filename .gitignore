@@ -1,0 +1,16 @@
+# samples file
+*.sigmf-data
+*.sigmf-meta
+
+# result file
+*.mat
+
+# picture file
+*.fig
+*.png
+*.pdf
+*.pptx
+
+# middle file
+*.asv
+

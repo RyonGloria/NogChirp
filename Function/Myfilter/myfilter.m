@@ -1,0 +1,9 @@
+function [singal_out] = myfilter(lora_set, singnal_in, fp, fs)
+    fn = lora_set.sample_rate; % 采样频率
+    rp = 1;
+    rs = 30;
+    wp = fp/(fn/2); % 计算归一化角频率
+    ws = fs/(fn/2);
+    [n, wn] = buttord(wp,ws,rp,rs); % 计算阶数和截止频率
+    [b,a] = butter(n,wn);
+    singal_out = filter(b,a,singnal_in);
