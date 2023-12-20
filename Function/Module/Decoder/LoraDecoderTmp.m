@@ -11,16 +11,16 @@ classdef LoraDecoderTmp < CHchirpDecoder
         function obj = decode(obj, signals)
             obj.binRecord = [];
             obj.preambleSignal = signals;
-            
+
             % 检测preamble，确定存在preamble并且获得第一个preamble出现的窗口和preamble数目
             obj = obj.detectPreambleBinBehind();
-            
+
             % 通过preamble和SFD的bin来计算CFO和winoffset
             obj = obj.getcfoWinoff();
-            
+
             % 调整信号的winoffset
             obj.preambleSignal = circshift(obj.preambleSignal, -round(obj.winOffset));
-            
+
             % 根据cfo重新生成带有decfo的idealchirp，用于解调
             obj = obj.rebuildIdealchirpCfo(0);
 
