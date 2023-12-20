@@ -21,7 +21,7 @@
 > - 中心频率：433.53125 MHz
 > - 频带范围：
 
-![NogChannel](.\Figure\NogChannel.png)
+![NogChannel](Figure/NogChannel.png)
 
 ### Payload
 
