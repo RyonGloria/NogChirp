@@ -4,6 +4,14 @@
 
 1. 自下而上扫描窗口内的信号，目标 chirp 峰值应该是连续的线性增长。
 
+   - 仿真非正交冲突
+
+     ![NogChirpfft](Figure/Nog_fft.png)
+
+   - 方法仿真验证结果
+
+     ![Methods](Figure/Methods.png)
+
 ## 实验设计
 
 > **Channel 1**：
@@ -64,7 +72,6 @@
     - **答**：
 11. - **问题**：
     - **答**： 
-
 
 
 
