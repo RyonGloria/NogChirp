@@ -7,7 +7,7 @@
 
 # picture file
 *.fig
-*.png
+# *.png
 *.pdf
 *.pptx
 
