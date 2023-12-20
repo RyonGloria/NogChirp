@@ -145,7 +145,6 @@ void loop() {
     // if receive the control message, start sending experiment message
     if (Send_Flag)
     {
-        delay(50);
         // transmit packet
         int state = radio.transmit(data);
         if (state == RADIOLIB_ERR_NONE) {
@@ -156,7 +155,7 @@ void loop() {
         FastLED.show();
         delay(1000);
         FastLED.showColor(CRGB(0,0,0), 0);
-        delay(950);
+        delay(1000);
     }
 }
 
