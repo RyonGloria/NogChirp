@@ -1,1 +1,0 @@
-# LEMoN Library
