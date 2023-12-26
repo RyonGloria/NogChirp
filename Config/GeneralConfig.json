@@ -8,10 +8,10 @@
             "test:times": 5,
             "lora:implicit": false,
             "test:expected": "deadbeef",
-            "core:frequency": 435000000.0,
+            "core:frequency": 433500000.0,
             "lora:prlen": 8,
             "lora:pkg_length": 300,
-            "lora:frequency": 435000000.0,
+            "lora:frequency": 433500000.0,
             "pass:arg": 0.05
         }
     ],
