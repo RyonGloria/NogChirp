@@ -1,10 +1,13 @@
-function [lora_set] = readLoraSet(json_name, sf, bw, samples_rate)
-    
-    Config_Path = '.\Config\';                                      % 设置配置文件所在的文件夹路径
+function [lora_set] = readLoraSet(json_name, sf, bw, samples_rate, Config_Path)
+
+    % Check if Config_Path is provided, otherwise use default value
+    if nargin < 5 || isempty(Config_Path)
+        Config_Path = '.\Config\';                               % 设置配置文件所在的文件夹路径
+    end
     % 读取配置信息
     Setting_File = dir(fullfile(Config_Path, json_name));           % 找到配置文件夹下符合名字的文件
     Setting_File_Path = strcat(Config_Path, Setting_File.name);
-    
+
     Setting_file = fopen(Setting_File_Path,'r');
     setting = jsondecode(fscanf(Setting_file,'%s'));                % 解析json格式变量
     if exist('sf', 'var')
@@ -24,7 +27,7 @@ function [lora_set] = readLoraSet(json_name, sf, bw, samples_rate)
     else
         lora_set.sample_rate = samples_rate;
     end
-    
+
     lora_set.Pkg_length = setting.captures.lora_pkg_length;         % 设置接收数据包的长度
     lora_set.dine = lora_set.sample_rate*bitshift(1,lora_set.sf)/lora_set.bw;    % 根据lora_set.sf和lora_set.bw计算出一个chirp包含的采样点个数
     lora_set.fft_x = 2^lora_set.sf;                               % 根据lora_set.dine计算出包含lora_set.bw所需的FFT点数
