@@ -12,7 +12,7 @@ classdef LoraDecoder
     methods
         function obj = LoraDecoder(loraSet)
             obj.loraSet = loraSet;
-            obj = obj.buildIdealchirp(0);
+            obj = obj.buildIdealchirp(0);  % default 0 125e3/4
         end
         
         function obj = buildIdealchirp(obj, f_temp)

@@ -11,7 +11,7 @@ samplesRate = 2e6;
 loraSet.payloadNum = 25; % payload数目
 NogChirpDecoder = NogChirpDecoder(loraSet);
 % 读取文件夹下所有采样值文件
-fileDir = '\\192.168.3.102\e\share\samples\';
+fileDir = '\\192.168.3.102\e\data\channel2_231220\';
 
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 for fileCount = 1:length(fileIn)
