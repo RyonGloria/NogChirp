@@ -136,7 +136,7 @@ classdef LoraDecoder
 %                 prominencesThreshold = 0.85;
                 prominencesThreshold = 0.6;
             end
-            leakWidth = obj.loraSet.leakage_width1;
+            % leakWidth = obj.loraSet.leakage_width1;
 %             [peak1, binPos1, ~, prominences1] = findpeaks(fftResult, "MinPeakDistance", fft_x*leakWidth, "SortStr", "descend");
             [peak1, binPos1, ~, prominences1] = findpeaks(fftResult, "SortStr", "descend");
             indecis = find((prominences1./peak1) >= prominencesThreshold);
