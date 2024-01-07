@@ -109,9 +109,9 @@ classdef NogChirpDecoder < LoraDecoder
             end
             % e.g. candidate = [308, 823, 823, 823, 823, 823, 823, 823, 823, 831, 839, 839]
             Preamble_bin = mode(candidate);           % 找到存在cfo 的 preamble 的 bin
-            % 找到sync word前一个preamble
+            % 找到 sync word 前一个preamble
             for t = 2 : preamble_len + 4
-                % 找到符合 syncword 特性的最后一个preamble, syncword 与 preamble 之间的间隔为 8 个 bin
+                % 找到符合 sync word 特性的最后一个preamble, syncword 与 preamble 之间的间隔为 8 个 bin
                 if (candidate(t) - candidate(t-1) >= 7 && candidate(t) - candidate(t-1) <= 9) ...
                         && abs(Preamble_bin - candidate(t-1)) <= 1
                     Preamble_start_pos = t - 1;
@@ -165,7 +165,7 @@ classdef NogChirpDecoder < LoraDecoder
                 end
             end
 
-            % 寻找与第一个窗口的峰（默认第一个窗口只有包1的峰）相近的峰，得到与其相近且重复次数最多的bin，记作Preamble的bin
+            % 寻找与第一个窗口的峰（默认第一个窗口只有包1的峰）相近的峰，得到与其相近且重复次数最多的 bin，记作 Preamble 的 bin
             if Peak_pos(2) == Peak_pos(1)
                 upchirp_ref = Peak_pos(1);
             else
@@ -175,7 +175,7 @@ classdef NogChirpDecoder < LoraDecoder
             upchirp_bin = (Peak_pos(upchirp_index));
             upchirp_peak = mode(upchirp_bin);
 
-            % 已知 SFD downchirp 的位置，得到 SFD downchirp的bin
+            % 已知 SFD downchirp 的位置，得到 SFD downchirp 的 bin
             SFD_samples = signal((preambleEndPosTemp + 3) * dine + 1 : (preambleEndPosTemp + 4) * dine);
             SFD_samples_fft = abs(fft(SFD_samples .* upchirp, dine_zeropadding));
             samples_fft_merge = SFD_samples_fft(1 : fft_x_zeropadding) + SFD_samples_fft(dine_zeropadding - fft_x_zeropadding + 1 : dine_zeropadding);
@@ -228,7 +228,7 @@ classdef NogChirpDecoder < LoraDecoder
                     break;
                 end
             end
-            % 处理找不到最后一个preamble的情况
+            % 处理找不到最后一个 preamble 的情况
             if exist('SFDPos', 'var') == 0
                 SFDPosTemp = 10;
             end
