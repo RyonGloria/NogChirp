@@ -1,24 +1,31 @@
 classdef NogChirpDecoder < LoraDecoder
     properties
-        record;
         payloadBin;
-        binRecord;
         splitSignal;
         channelList;
         subchirpNum;
-        preambleActiveChannel;
+        preambleChannel;
         preambleSignal;
         preambleStartPos;
-        preambleNum;
+        Downchirp_ind;
+        preambleBin;
         channelArray;
         timeOffset;
         preambleEndPos;
         SFDPos;
         channelNum;
         channelMatrix;
-        PreambleBin;
+        OverBandBw;
+        window;
+        errorFlag;
+        errorMsg;
+        peakStandard;
+        SFDPeakAmp;
+        DebugUtil;
+        preamblePeak;
         upchirpbin;
         downchirpbin;
+        fftBinDeWinRecord;   % 记录整个解码窗口的峰值位置
     end
 
     methods
@@ -27,8 +34,31 @@ classdef NogChirpDecoder < LoraDecoder
             obj@LoraDecoder(loraSet);
         end
 
+        function obj = clear(obj)
+            % 清空类中的某些中间值
+            obj.payloadBin = [];
+            obj.splitSignal = [];
+            obj.preambleSignal = [];
+            obj.preambleStartPos = [];
+            obj.channelArray = [];
+            obj.timeOffset = [];
+            obj.preambleEndPos = [];
+            obj.SFDPos = [];
+            obj.peakStandard = [];
+            obj.SFDPeakAmp = [];
+            obj.cfo = [];
+            obj.winOffset = [];
+            obj.cfoDownchirp = [];
+            obj.cfoUpchirp = [];
+            obj.preamblePeak = [];
+            obj.errorFlag = false; % 每次进行setArgs相当于一次初始化，所以要对errorFlag置为false
+            obj.errorMsg = "";
+            obj.fftBinDeWinRecord = [];
+        end
+
         function obj = decode(obj, signals)
-            obj.binRecord = [];
+            obj = obj.clear();
+
             obj.preambleSignal = signals;
 
             % 检测 preamble，确定存在 preamble 并且获得最后一个 preamble 出现的窗口和 preamble 数目
@@ -45,9 +75,13 @@ classdef NogChirpDecoder < LoraDecoder
 
             obj = obj.getSFDPos();
 
-            obj = obj.singleDecode();
+            obj = obj.NogSingleDecode();
+            % obj = obj.singleDecode();
         end
 
+        % 方法: payload de-chirp (Default)
+        % 参数:
+        % 结果: obj.payloadBin
         function obj = singleDecode(obj)
             fftX = obj.loraSet.fft_x;
             dine = obj.loraSet.dine;
@@ -56,15 +90,224 @@ classdef NogChirpDecoder < LoraDecoder
 
             % dechirp做FFT，获得最大峰值即为信道矩阵的信息
             signal = preambleSignalTemp((obj.SFDPos + 2.25)*dine + 1 : end);
-            for window = 1 : obj.loraSet.payloadNum
-                signals = signal((window - 1) * dine + 1 : window * dine);
+            for window_i = 1 : obj.loraSet.payloadNum
+                signals = signal((window_i - 1) * dine + 1 : window_i * dine);
                 dechirp = signals .* obj.cfoDownchirp;
                 dechirp_fft = abs(fft(dechirp, dine));
                 dechirp_fft = dechirp_fft(1 : fftX) + dechirp_fft(dine - fftX + 1 : dine);
-                [~, binArr(window)] = max(dechirp_fft);
+                [~, binArr(window_i)] = max(dechirp_fft);
             end
 
-            obj.binRecord = binArr;
+            obj.payloadBin = binArr;
+        end
+
+        % 方法: chirp de-chirp (Default)
+        % 参数:
+        % 结果: [signalOut]
+        function [signalOut] = decodeChirp(obj, chirp)
+            S_t = obj.cfoDownchirp .* chirp;
+            dechirp_fft = abs(fft(S_t, obj.loraSet.dine)); % fft()函数的结果是个复数,取绝对值表示幅值
+            signalOut = dechirp_fft(1 : obj.loraSet.fft_x) + dechirp_fft(obj.loraSet.dine - obj.loraSet.fft_x + 1 : obj.loraSet.dine);
+        end
+
+        % 方法: 高通滤波, 保留 -bw/2 到 bw/2 的信号
+        % 参数:
+        % -- chirp: 信号
+        % 结果: [signalOutRevise]
+        function [signalOutRevise] = filterOutOtherCH(obj, chirp)
+            f_pass = obj.loraSet.bw / 2;  % 滤波器通带频率范围, 只保留 -bw/2 到 bw/2 的信号。
+            w_pass = f_pass / (obj.loraSet.sample_rate/2);  % 计算归一化频率
+            order = 1000;   % 滤波器阶数
+            b = fir1(order, w_pass, 'bandpass');   % FIR 带通滤波器
+            signalOut = filter(b, 1, chirp);
+
+            delay = mean(grpdelay(b, obj.loraSet.dine, obj.loraSet.sample_rate));   % 计算滤波器的延迟
+
+            signalOutRevise = signalOut;
+            if delay > 0
+                signalOutRevise(1 : delay) = [];
+                signalOutRevise(obj.loraSet.dine - delay + 1 : obj.loraSet.dine) = 0;
+            end
+        end
+
+        % 方法: 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
+        % 参数:
+        % -- signalInfo: 候选峰信息(峰值, Bin 值)
+        % -- winSize: 窗口大小(0 ~ 1)
+        % 结果: [signalOutRevise]
+        function [groupInfo] = powerExtraction(obj, signalInfo, winSize)
+            peak = signalInfo(1, :);
+            pos = signalInfo(2, :);
+            PowerAmp = obj.loraSet.fft_x;
+            PowerThreshold = PowerAmp * winSize / 2; % 阈值为窗口大小能量的一半
+
+            for i = 1 : 100
+                if peak(1, i) < PowerThreshold
+                    peak = peak(1 : i - 1);
+                    pos = pos(1 : i - 1);
+                    break;
+                end
+            end
+            groupInfo = [peak; pos];
+        end
+
+        % 生成部分下行扩频信号, 用于解调
+        function [downchirpPart] = downchirpPart(obj, part)
+            cmx = 1+1*1i;
+            pre_dir = 2*pi;
+            d_symbols_per_second = obj.loraSet.bw / obj.loraSet.fft_x;
+            T = -0.5 * obj.loraSet.bw * d_symbols_per_second;
+            d_samples_per_second = obj.loraSet.sample_rate;       % sdr-rtl的采样率
+            d_dt = 1/d_samples_per_second;         % 采样点间间隔的时间
+            f0 = obj.loraSet.bw / 2 + obj.cfo;                           % 设置理想 downchirp 的初始频率
+
+            function [noneArr] = noneArr(seg)
+                if length(seg) == 1
+                    noneArr = [];
+                else
+                    noneArr = zeros(size(seg));
+                end
+            end
+            r_t = part / obj.loraSet.fft_x;
+            seg_1 = d_dt * (0 : 1 : (1 - r_t) * (obj.loraSet.dine- 1));
+            seg_2 = d_dt * ((1 - r_t) * (obj.loraSet.dine- 1) : 1 : obj.loraSet.dine- 1);
+            Downchirp_1 =  noneArr(seg_1);
+            Downchirp_2 = cmx * (cos(pre_dir .* seg_2 .* (f0 + T * seg_2)) + sin(pre_dir .* seg_2 .* (f0 + T * seg_2))*1i);
+            downchirpPart = [Downchirp_1, Downchirp_2];
+        end
+
+        % 方法: 生成下行扩频信号滑动窗口, 自左向右, winSize 为窗口大小(0 ~ 1), offset 为窗口偏移(0 ~ 2^SF - 1)
+        % 参数:
+        % -- winSize: 窗口大小(0 ~ 1)
+        % -- step: 窗口偏移(0 ~ 2^SF - 1)}
+        % 结果: [downchirpSW]
+        function [downchirpSW] = downchirpSW(obj, winSize, offset)
+            function [noneArr] = noneArr(seg)
+                if length(seg) == 1
+                    noneArr = [];
+                else
+                    noneArr = zeros(size(seg));
+                end
+            end
+
+            cmx = 1 + 1 * 1i;
+            pre_dir = 2 * pi;
+            d_symbols_per_second = obj.loraSet.bw / obj.loraSet.fft_x;
+            T = -0.5 * obj.loraSet.bw * d_symbols_per_second;
+            d_samples_per_second = obj.loraSet.sample_rate;       % sdr-rtl的采样率
+            d_dt = 1/d_samples_per_second;         % 采样点间间隔的时间
+            f0 = obj.loraSet.bw / 2 + obj.cfo;
+
+            r_t = offset / obj.loraSet.fft_x;  % e.g. 1/8 (128/1024)
+            % seg_1 = d_dt * (0 : 1 : r_t * obj.loraSet.dine- 1);
+            % seg_2 = d_dt * (r_t * obj.loraSet.dine : 1 : (r_t + winSize) * obj.loraSet.dine- 1);
+            % seg_3 = d_dt * ((r_t + winSize) * obj.loraSet.dine : 1 : obj.loraSet.dine- 1);
+            seg_1 = d_dt * (0 : 1 : r_t * (obj.loraSet.dine- 1));
+            seg_2 = d_dt * (r_t * (obj.loraSet.dine- 1) : 1 : (r_t + winSize) * (obj.loraSet.dine- 1));
+            seg_3 = d_dt * ((r_t + winSize) * (obj.loraSet.dine- 1) : 1 : obj.loraSet.dine- 1);
+            Downchirp_1 =  noneArr(seg_1);
+            Downchirp_2 = cmx * (cos(pre_dir .* seg_2 .* (f0 + T * seg_2)) + sin(pre_dir .* seg_2 .* (f0 + T * seg_2)) * 1i);
+            Downchirp_3 =  noneArr(seg_3);
+            downchirpSW = [Downchirp_1, Downchirp_2, Downchirp_3];
+        end
+
+        % 方法: 滑动窗口的方法解调, 自左向右移动 (downchirp 切分)
+        % 参数:
+        % -- chirp: 信号
+        % -- winSize: 窗口大小(0 ~ 1)
+        % -- step: 窗口偏移(0 ~ 2^SF - 1)}
+        % 结果: obj.fftBinDeWinRecord
+        function obj = decodeSildWindow(obj, chirp, winSize, step)
+            dechirp_fft = obj.decodeChirp(chirp);
+            signalWhole = obj.findpeaksWithShift(dechirp_fft, obj.loraSet.fft_x); % 找峰值
+            deWinpeakposInfo = obj.powerExtraction(signalWhole, 1);
+            obj.fftBinDeWinRecord = deWinpeakposInfo(2,:);
+
+            for i = 0 : 1: ((obj.loraSet.fft_x - (obj.loraSet.fft_x * winSize)) / step)
+                S_t = obj.downchirpSW(winSize, i * step) .* chirp;
+                dechirp_fft = abs(fft(S_t, obj.loraSet.dine));      % fft()函数的结果是个复数, 取绝对值表示幅值
+                dechirp_fft = dechirp_fft(1 : obj.loraSet.fft_x) + dechirp_fft(obj.loraSet.dine - obj.loraSet.fft_x + 1 : obj.loraSet.dine);
+                sildWinOut = obj.findpeaksWithShift(dechirp_fft, obj.loraSet.fft_x); % 找峰值
+                sildWinPEOut = obj.powerExtraction(sildWinOut, winSize);
+                % [sildWinPeak] = sildWinPEOut(1, :);
+                [sildWinPos] = sildWinPEOut(2, :);
+
+                recordLen = length(obj.fftBinDeWinRecord);
+                % 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
+                for j = 1 : recordLen
+                    element = obj.fftBinDeWinRecord(j);
+                    if ~ismember(element, sildWinPos)  % e.g. fftBinDeWinRecord = [810(目标bin), 555(噪声), 467(非正交bin)]  pos = [810(目标bin), 244(噪声)]
+                        index_to_remove = (obj.fftBinDeWinRecord == element);
+                        obj.fftBinDeWinRecord(index_to_remove) = -1;
+                    end
+                end
+            end
+            % 找到非负值的元素的索引
+            non_negative_indices = (obj.fftBinDeWinRecord >= 0);
+            obj.fftBinDeWinRecord = obj.fftBinDeWinRecord(non_negative_indices);
+        end
+
+        % 方法: 滑动窗口的方法解调, 自左向右移动 (datachirp 切分)
+        % 参数:
+        % -- chirp: 信号
+        % -- winSize: 窗口大小(0 ~ 1)
+        % -- step: 窗口偏移(0 ~ 2^SF - 1)}
+        % 结果: obj.fftBinDeWinRecord
+        function obj = decodeChirpSildWin(obj, chirp, winSize, step)
+            dechirp_fft = obj.decodeChirp(chirp);
+            signalWhole = obj.findpeaksWithShift(dechirp_fft, obj.loraSet.fft_x); % 找峰值
+            deWinpeakposInfo = obj.powerExtraction(signalWhole, 1);
+            obj.fftBinDeWinRecord = deWinpeakposInfo(2,:);
+
+            for i = 0 : 1: ((obj.loraSet.fft_x - (obj.loraSet.fft_x * winSize)) / step)
+                chirpTmp = chirp;
+                chirpStart = (i * step / obj.loraSet.fft_x) * obj.loraSet.dine + 1;  % 确定 chirp 切片的起始位置
+                chirpEnd = chirpStart + winSize * obj.loraSet.dine;  % 确定 chirp 切片的结束位置
+                chirpTmp(1 : chirpStart - 1) = 0;               % 将 chirp 切片之前的位置置零
+                chirpTmp(chirpEnd : obj.loraSet.dine) = 0;      % 将 chirp 切片之后的位置置零
+
+                S_t = obj.cfoDownchirp .* chirpTmp;
+                dechirp_fft = abs(fft(S_t, obj.loraSet.dine));      % fft()函数的结果是个复数, 取绝对值表示幅值
+                dechirp_fft = dechirp_fft(1 : obj.loraSet.fft_x) + dechirp_fft(obj.loraSet.dine - obj.loraSet.fft_x + 1 : obj.loraSet.dine);
+                sildWinOut = obj.findpeaksWithShift(dechirp_fft, obj.loraSet.fft_x); % 找峰值
+                sildWinPEOut = obj.powerExtraction(sildWinOut, winSize);
+                % [sildWinPeak] = sildWinPEOut(1, :);
+                [sildWinPos] = sildWinPEOut(2, :);
+
+                recordLen = length(obj.fftBinDeWinRecord);
+                % 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
+                for j = 1 : recordLen
+                    element = obj.fftBinDeWinRecord(j);
+                    if ~ismember(element, sildWinPos)  % e.g. fftBinDeWinRecord = [810(目标bin), 555(噪声), 467(非正交bin)]  pos = [810(目标bin), 244(噪声)]
+                        index_to_remove = (obj.fftBinDeWinRecord == element);
+                        obj.fftBinDeWinRecord(index_to_remove) = -1;
+                    end
+                end
+            end
+            % 找到非负值的元素的索引
+            non_negative_indices = (obj.fftBinDeWinRecord >= 0);
+            obj.fftBinDeWinRecord = obj.fftBinDeWinRecord(non_negative_indices);
+        end
+
+        % 方法: 非正交信道解码
+        % 参数:
+        % 结果: obj.payloadBin
+        function obj = NogSingleDecode(obj)
+            dine = obj.loraSet.dine;
+            preambleSignalTemp = obj.preambleSignal;
+            % binArr = zeros(1, obj.loraSet.payloadNum);
+
+            % dechirp做FFT，获得最大峰值即为信道矩阵的信息
+            signal = preambleSignalTemp((obj.SFDPos + 2.25)*dine + 1 : end);
+            for window_i = 1 : obj.loraSet.payloadNum
+                windowChirp = signal((window_i - 1) * dine + 1 : window_i * dine);
+                signalOutRevise = obj.filterOutOtherCH(windowChirp);
+                obj = obj.decodeSildWindow(signalOutRevise, 1/8, 128);   % 信号, 窗口大小, 步长
+                % obj = obj.decodeChirpSildWin(signalOutRevise, 1/8, 128);   % 信号, 窗口大小, 步长
+                % binArr(window_i) = obj.fftBinDeWinRecord;
+                disp(obj.fftBinDeWinRecord);
+            end
+            % obj.payloadBin = binArr;
         end
 
         function obj = detectPreambleBin(obj)
@@ -94,6 +337,12 @@ classdef NogChirpDecoder < LoraDecoder
             obj.preambleNum = Preamble_num;
         end
 
+        % 通过 SFD 检测 preamble 的位置
+        function obj = detectSFDofCrossCorrelation(obj)
+
+        end
+
+        % 通过检测 preamble 的众数来确定 preamble 的位置
         function obj = detectPreambleBinBehind(obj)
             dine = obj.loraSet.dine;
             fft_x = obj.loraSet.fft_x;
@@ -124,9 +373,10 @@ classdef NogChirpDecoder < LoraDecoder
                 Preamble_start_pos = Preamble_start_pos(end);
             end
             obj.preambleEndPos = Preamble_start_pos;   % e.g. 9
-            obj.PreambleBin = Preamble_bin;   % e.g. 823
+            obj.preambleBin = Preamble_bin;   % e.g. 823
         end
 
+        % 利用 Preamble(Base-upchirp) 和 SFD(Base-downchirp) 相反偏移的性质，计算 CFO 和 winoffset
         function obj = getcfoWinoff(obj)
             % 计算主峰的 CFO (需要补零操作, 为了更好地评估峰值频率，可以通过用零填充原始信号来增加分析窗的长度。这种方法以更精确的频率分辨率自动对信号的傅里叶变换进行插值)
             % 对 Preamble 阶段的 FFT 峰值进行排序，得到前 filter 的峰
@@ -147,6 +397,7 @@ classdef NogChirpDecoder < LoraDecoder
             dine_zeropadding = dine * zeropadding_size * 2 ^ (10 - d_sf);   % e.g. 16384 * 16 * 2 ^ (10 - 10) = 262144
             fft_x_zeropadding = fft_x * zeropadding_size * 2 ^ (10 - d_sf);  % e.g. 1024 * 16 * 2 ^ (10 - 10) = 16384
 
+            % 获取最后一个preamble窗口的若干个峰值，找到最接近preambleBin的峰
             samples = reshape(signal((preambleEndPosTemp - 8) * dine + 1 : preambleEndPosTemp * dine), [dine, Preamble_num]).';  % e.g. 8 * 16384[]
             samples_fft = abs(fft(samples .* downchirp, dine_zeropadding, 2));  %  e.g. 8 * 262144[]
             samples_fft_merge = samples_fft(:, 1 : fft_x_zeropadding) + samples_fft(:, dine_zeropadding - fft_x_zeropadding + 1 : dine_zeropadding);  % e.g. 8 * 16384[]
