@@ -4,12 +4,12 @@ classdef CICDecoder
         binRecord;
         detectCount;
     end
-    
+
     methods
         function obj = CICDecoder(loraSet)
             obj.loraSet = loraSet;
         end
-        
+
         function obj = decode(obj, x_1)
             %% Loading variables
             % chirp variables
@@ -20,7 +20,7 @@ classdef CICDecoder
             N = 2^SF;
             upsampling_factor = Fs/BW;
             Ts = 1/Fs;
-            
+
             % LORA pkt variables
             num_preamble = obj.param_configs(4);
             num_sync = obj.param_configs(5);
@@ -29,10 +29,10 @@ classdef CICDecoder
             preamble_sym = 1;
             pkt_len = num_preamble + num_sync + num_DC + num_data_sym;
             num_samples = pkt_len * N;
-            
+
             % Generating a Downchirp
             DC = conj(obj.sym_to_data_ang([1],N));
-            
+
             %%  Loading File
             % path = param_configs(14);
             % fil_nm = param_configs(15);
@@ -41,7 +41,7 @@ classdef CICDecoder
             % fi_1 = fopen([path fil_nm]);
             % x_inter_1 = fread(fi_1,'float32');
             % fclose(fi_1);
-            
+
             % parse complex data
             % x_1 = x_inter_1(1:2:end) + 1i*x_inter_1(2:2:end);   % Read Complex values
             % x_1 = x_1.';
@@ -50,14 +50,14 @@ classdef CICDecoder
             % x_1 = [x_1, zeros(1, N*upsampling_factor*500)];
             % x_1 = [x_1, x_1];
             % x_1 = x_1(1:N*upsampling_factor*40);
-            
+
             % file Duration
             t = [0:length(x_1)-1]/Fs;
-            
+
             x_1 = x_1(1:floor(length(x_1)/upsampling_factor)*upsampling_factor);
             x_1_dnsamp = x_1(1:upsampling_factor:end);
             file_dur = (length(x_1)/Fs);
-            
+
             %%  Active Sessions Detection using Dechirping Windows
             uplink_wind = obj.active_sess_dechirp(x_1);             % uplink_wind contains the [start,  end] indices of each active session detected
             uplink_wind = obj.active_sess_split(uplink_wind, 10 * num_samples * upsampling_factor, 2.5 * upsampling_factor * N);    % split up sessions longer than 10 times packet length
@@ -69,16 +69,16 @@ classdef CICDecoder
             for m = 1:size(uplink_wind,1)
                 % disp(' ')
                 % disp(['Active Session no. ' num2str(m)])
-                
+
                 %%      DC correlations to find LoRa pkts out of collision
-                
+
                 temp_buff = [];
                 temp_buff = x_1(uplink_wind(m,1) : uplink_wind(m,2));
                 temp_buff = temp_buff(:,1:floor(size(temp_buff,2)/upsampling_factor)*upsampling_factor);
-                
+
                 DC_ind = obj.DC_location_correlation(temp_buff(1:upsampling_factor:end));
                 % disp(['Found ' num2str(size(DC_ind,1)) ' Downchirps in current Active session'])
-                
+
                 if(size(DC_ind,1) == 0)
                     continue;
                 end
@@ -89,8 +89,8 @@ classdef CICDecoder
                     temp_buff = x_1(uplink_wind(m,1) : uplink_wind(m,2) + ex_samp);
                     temp_buff = temp_buff(:,1:floor(size(temp_buff,2)/upsampling_factor)*upsampling_factor);
                 end
-                
-                
+
+
                 %%      UC correlation to filter false positives and frequency offset & Packets' SNR estimation
                 % All possible downsampled Buffers with different starting sample for downsampling
                 Data_freq_off = [];
@@ -99,19 +99,19 @@ classdef CICDecoder
                     Rx_Buff_dnsamp(i,:) = temp_buff(i:upsampling_factor:end);
                 end
                 [Upchirp_ind] = obj.UC_location_corr_DC_based(temp_buff(1:upsampling_factor:end),DC_ind);
-                
+
                 if(size(Upchirp_ind,1) == 0)
                     continue;
                 end
-                
+
                 % for each Preamble detected, Choosing the correct downsampled buffer with any frequency offset
                 % been compensated and determining Preamble Peak heights to be used later for Power filtering
                 [Data_freq_off, Peak, Upchirp_ind,FFO] = obj.dnsamp_buff(Rx_Buff_dnsamp,Upchirp_ind);
-                
+
                 if(size(Upchirp_ind,1) == 0)
                     continue;
                 end
-                
+
                 % Filter False Positives based on 2-SYNC Words detected
                 [Preamble_ind, bin_offsets, Data_out, Peak_amp,FFO] = obj.filter_false_postives(Data_freq_off,Upchirp_ind,Peak,FFO);
                 %%  filter preambles that are with in 5 samples (same pkt detected twice due to Correlation peak energy spread)
@@ -138,7 +138,7 @@ classdef CICDecoder
                 Pream_ind = temp;
                 Data_out = temp_data;
                 Peak_amp = temp_peaks;
-                
+
                 % disp(['Found ' num2str(size(Pream_ind,1)) ' Preambles in current Active session'])
                 %%  Data Demodulation using CIC
                 demod_sym = [];
@@ -156,7 +156,7 @@ classdef CICDecoder
             for index = 1:size(demod_sym_stack, 1)
                 obj.binRecord{index} = mod(demod_sym_stack(index, :)+2, obj.loraSet.fft_x);
             end
-            
+
         end
 
         function obj = detectPass(obj, x_1)
@@ -170,7 +170,7 @@ classdef CICDecoder
             N = 2^SF;
             upsampling_factor = Fs/BW;
             Ts = 1/Fs;
-            
+
             % LORA pkt variables
             num_preamble = obj.param_configs(4);
             num_sync = obj.param_configs(5);
@@ -179,17 +179,17 @@ classdef CICDecoder
             preamble_sym = 1;
             pkt_len = num_preamble + num_sync + num_DC + num_data_sym;
             num_samples = pkt_len * N;
-            
+
             % Generating a Downchirp
             DC = conj(obj.sym_to_data_ang([1],N));
-            
+
             % file Duration
             t = [0:length(x_1)-1]/Fs;
-            
+
             x_1 = x_1(1:floor(length(x_1)/upsampling_factor)*upsampling_factor);
             x_1_dnsamp = x_1(1:upsampling_factor:end);
             file_dur = (length(x_1)/Fs);
-            
+
             %%  Active Sessions Detection using Dechirping Windows
             uplink_wind = obj.active_sess_dechirp(x_1);             % uplink_wind contains the [start,  end] indices of each active session detected
             uplink_wind = obj.active_sess_split(uplink_wind, 10 * num_samples * upsampling_factor, 2.5 * upsampling_factor * N);    % split up sessions longer than 10 times packet length
@@ -201,16 +201,16 @@ classdef CICDecoder
             for m = 1:size(uplink_wind,1)
                 % disp(' ')
                 % disp(['Active Session no. ' num2str(m)])
-                
+
                 %%      DC correlations to find LoRa pkts out of collision
-                
+
                 temp_buff = [];
                 temp_buff = x_1(uplink_wind(m,1) : uplink_wind(m,2));
                 temp_buff = temp_buff(:,1:floor(size(temp_buff,2)/upsampling_factor)*upsampling_factor);
-                
+
                 DC_ind = obj.DC_location_correlation(temp_buff(1:upsampling_factor:end));
                 % disp(['Found ' num2str(size(DC_ind,1)) ' Downchirps in current Active session'])
-                
+
                 if(size(DC_ind,1) == 0)
                     continue;
                 end
@@ -221,8 +221,8 @@ classdef CICDecoder
                     temp_buff = x_1(uplink_wind(m,1) : uplink_wind(m,2) + ex_samp);
                     temp_buff = temp_buff(:,1:floor(size(temp_buff,2)/upsampling_factor)*upsampling_factor);
                 end
-                
-                
+
+
                 %%      UC correlation to filter false positives and frequency offset & Packets' SNR estimation
                 % All possible downsampled Buffers with different starting sample for downsampling
                 Data_freq_off = [];
@@ -231,19 +231,19 @@ classdef CICDecoder
                     Rx_Buff_dnsamp(i,:) = temp_buff(i:upsampling_factor:end);
                 end
                 [Upchirp_ind] = obj.UC_location_corr_DC_based(temp_buff(1:upsampling_factor:end),DC_ind);
-                
+
                 if(size(Upchirp_ind,1) == 0)
                     continue;
                 end
-                
+
                 % for each Preamble detected, Choosing the correct downsampled buffer with any frequency offset
                 % been compensated and determining Preamble Peak heights to be used later for Power filtering
                 [Data_freq_off, Peak, Upchirp_ind,FFO] = obj.dnsamp_buff(Rx_Buff_dnsamp,Upchirp_ind);
-                
+
                 if(size(Upchirp_ind,1) == 0)
                     continue;
                 end
-                
+
                 % Filter False Positives based on 2-SYNC Words detected
                 [Preamble_ind, bin_offsets, Data_out, Peak_amp,FFO] = obj.filter_false_postives(Data_freq_off,Upchirp_ind,Peak,FFO);
                 %%  filter preambles that are with in 5 samples (same pkt detected twice due to Correlation peak energy spread)
@@ -270,21 +270,21 @@ classdef CICDecoder
                 Pream_ind = temp;
                 obj.detectCount = obj.detectCount + size(Pream_ind, 1);
             end
-            
+
         end
-        
-        
+
+
         function [uplink_wind] = active_sess_dechirp(obj, x_1)
             SF = obj.param_configs(1);
             BW = obj.param_configs(2);
             Fs = obj.param_configs(3);
             N = 2^SF;
             upsampling_factor = Fs/BW;
-            
+
             DC = conj(obj.sym_to_data_ang([1],N));
             DC_fft = fft(DC);
             DC_upsamp =(ifft([DC_fft(1:N/2) zeros(1,(upsampling_factor-1)*N) DC_fft(N/2 + 1:N)]));
-            
+
             peak_gain = [];
             uplink_wind = [];
             n = [];
@@ -318,7 +318,7 @@ classdef CICDecoder
                     end
                 end
                 mov_thresh_rec = [mov_thresh_rec mov_thresh];
-                
+
                 if(peak_gain(end) >= mov_thresh)
                     if(i > last_wind)
                         if(i-back_buf < 1)
@@ -338,39 +338,39 @@ classdef CICDecoder
             uplink_wind = uplink_wind(find(uplink_wind(:,2)-uplink_wind(:,1) ~= (front_buf + back_buf - 1)),:);
             temp_link = uplink_wind;
             uplink_wind = uplink_wind.*(win_jump);
-            
+
             if(uplink_wind(end,2) > length(x_1))
                 uplink_wind(end,2) = length(x_1);
             end
         end
-        
+
         function [symbols] = CIC_Demod(obj, Pream_ind,Rx_Buffer,Pream_ind_stack,Peak_amp,m)
             % chirp variables
             SF = obj.param_configs(1);
             N = 2^SF;
-            
+
             % LORA pkt variables
             num_preamble = obj.param_configs(4);
             num_sync = obj.param_configs(5);
             num_DC = obj.param_configs(6);
             num_data_sym = obj.param_configs(7);
-            
+
             DC = conj(obj.sym_to_data_ang([1],N));
-            
+
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             Pream_ind_stack(:,num_preamble + 1) = Pream_ind_stack(:,num_preamble) + N;
-            
+
             % for each Preamble in the Pream_ind_stack, compute exact start and end
             % indices for all the data symbols
             for i = 1: size(Pream_ind_stack,1)
                 frm_st = Pream_ind_stack(i,1) + (num_preamble*N) + (num_DC*N) + (num_sync*N);
                 frm_ind(i,:,:) = [((frm_st: N :frm_st+((num_data_sym-1)*N)))' ((frm_st+N-1 : N :frm_st+((num_data_sym)*N)))'];
             end
-            
+
             % for the pkt to be demodulated, find indexes for each data symbol
             Data_frame_start = Pream_ind(1) + (num_preamble*N) + (num_DC*N) + (num_sync*N);
             frame_indices = [((Data_frame_start: N :Data_frame_start+((num_data_sym-1)*N)))' ((Data_frame_start+N-1 : N :Data_frame_start+((num_data_sym)*N)))'];
-            
+
             for  k = 1:num_data_sym
                 %% Find interfering Symbol Boundaries
                 % for current demodulation window, find the chunks of interfering
@@ -385,7 +385,7 @@ classdef CICDecoder
                         sym_bnd = [sym_bnd ed(intersect(find(ed > frame_indices(k,1)) , find(ed < frame_indices(k,2))))];
                     end
                 end
-                
+
                 %% CIC Filtering
                 if(frame_indices(k,2) > length(Rx_Buffer))
                     symbols(k) = -3;
@@ -394,14 +394,14 @@ classdef CICDecoder
                 % standard LoRa dechirping
                 data_wind = Rx_Buffer(frame_indices(k,1):frame_indices(k,2)) .* DC;
                 data_fft = abs(fft(data_wind));
-                
+
                 % scale the dmeodulation window with appropriate Gaussian to
                 % suppress the interfering symbols at window ends
                 sigma = 1;
                 amp_scale = exp(-(1/(2*(sigma^2)))* linspace(-1,1,N).^2);
                 amp_scale = amp_scale./(sqrt(2*pi)*sigma);
                 temp_wind = data_wind .* amp_scale;
-                
+
                 sym_bnd = mod(sym_bnd - frame_indices(k,1),N);
                 intf_wind = [];
                 % n_pnt is the fft Factor - fft(Signal, n_pnt * length(Signal))
@@ -469,7 +469,7 @@ classdef CICDecoder
                     end
                 end
                 pot_sym = temp;
-                
+
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 %         pot_sym = pot_sym_pf;
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -478,50 +478,50 @@ classdef CICDecoder
                 if(length(sym_bnd) == 0)
                     % if there is no symbol colliding with current demod window
                     if(length(pot_sym) == 0)
-                        
+
                         [~,symbols(k)] = max(data_fft);
-                        
+
                     else
-                        
+
                         % choose peak closest in height to Preamble Peak
                         dist = abs(data_fft(pot_sym) - (up_thresh + low_thresh)/2);
                         [~,b] = min(dist);
                         symbols(k) = pot_sym(b);
-                        
+
                     end
                 else
                     % if symbols are colliding with current demod window
                     fin_sym = intersect(pot_sym_cic,pot_sym);
                     if(length(fin_sym) == 0)
                         if(length(pot_sym_cic) == 0 && length(pot_sym) ~= 0)
-                            
+
                             % choose peak closest in height to Preamble Peak
                             dist = abs(data_fft(pot_sym) - (up_thresh + low_thresh)/2);
                             [~,b] = min(dist);
                             symbols(k) = pot_sym(b);
-                            
+
                         elseif(length(pot_sym_cic) ~= 0 && length(pot_sym) == 0)
-                            
+
                             % make decision based on CIC's windows, correct symbol should
                             % have lowest std as it appears in all windows
                             sdev = std(intf_wind(:,n_pnt.*pot_sym_cic),1);
                             [~,b] = min(sdev);
                             symbols(k) = pot_sym_cic(b);
-                            
+
                         elseif(length(pot_sym) == 0 && length(pot_sym_cic) == 0)
-                            
+
                             [~,symbols(k)] = max(data_fft);
                         else
-                            
+
                             % choose peak closest in height to Preamble Peak
                             dist = abs(data_fft(pot_sym) - (up_thresh + low_thresh)/2);
                             [~,b] = min(dist);
                             symbols(k) = pot_sym(b);
-                            
+
                         end
                     else
                         % if intersection yields some candidates then decide based on partial STFT as following
-                        
+
                         %%  Stft
                         % find stft 2D matrix of follwoing dimensions
                         % N frequency (rows)  x  [1 : avg_pnts      N - avg_pnts : N] (columns)
@@ -542,12 +542,12 @@ classdef CICDecoder
                         dif = abs(freq_amp - freq_amp_end);
                         [~,b] = min(dif);
                         symbols(k) = fin_sym(b);
-                        
+
                     end
                 end
             end
         end
-        
+
         function [windows] = active_sess_split(obj, windows, max_window_length, window_overlap)
             i = 0;
             while i < size(windows, 1)
@@ -556,20 +556,20 @@ classdef CICDecoder
                     len = abs(windows(i, 2) - windows(i, 1)) / 2;               % get bisected length
                     win1_end = ceil(windows(i, 1) + len + (window_overlap / 2));        % add overlap to each half
                     win2_start = floor(windows(i, 2) - len - (window_overlap / 2));
-                    
+
                     windows = [windows(1:i - 1,:); [windows(i,1), win1_end]; windows(i:end,:)]; % bisect the window
                     windows(i+1, 1) = win2_start;
                     i = i - 1;  % see if the first bisected half is within the max window length
                 end
             end
         end
-        
+
         function [Downchirp_ind] = DC_location_correlation(obj, Rx_Buffer)
             %DC_LOCATION Summary of this function goes here
             % this function runs the cross-correlation of Rx_Buffer with a single
             % Downchirp and outputs the indices of any Downchirp detected based on
             % 2 correlation peaks that are N samples apart
-            
+
             % loading variables
             SF = obj.param_configs(1);
             BW = obj.param_configs(2);
@@ -579,7 +579,7 @@ classdef CICDecoder
             % thresholds
             corr_threshold = obj.param_configs(8);      % Threshold above which we extract all Correlation peaks
             pnts_threshold = obj.param_configs(9);      % Max. # of peaks to extract from Corrrelation Plot
-            
+
             DC = conj(obj.sym_to_data_ang([1],N));
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             %% Cross Correlation with a Single downchirp
@@ -591,9 +591,9 @@ classdef CICDecoder
             end
             Cross_Corr = Cross_Corr(isfinite(Cross_Corr));
             corr_threshold =  4*sum(abs(Cross_Corr))/length(Cross_Corr);
-            
+
             %%  Optional Cross-Correlation Plot
-            
+
             n_samp_array = [];
             peak_ind_prev = [];
             for i = 0:floor(length(Cross_Corr)/N)-1
@@ -615,11 +615,11 @@ classdef CICDecoder
                 end
                 peak_ind_prev = peak_ind_curr;
             end
-            
+
             for i = 1:length(n_samp_array)
                 c = 0;
                 ind_arr = n_samp_array(i) : N : n_samp_array(i) + (N);
-                
+
                 for j = 1:length(ind_arr)
                     c = c + sum( n_samp_array == ind_arr(j) );
                 end
@@ -629,13 +629,13 @@ classdef CICDecoder
                     Downchirp_ind = [Downchirp_ind; [ind_arr]];
                 end
             end
-            
-            
+
+
             % filter Downchirps that are with in 3 samples (same pkt detected twice due to peak energy spread)
             temp = [];
             indices = [zeros(1,floor(num_DC)); Downchirp_ind];
             for i = 2:size(indices,1)
-                
+
                 if(isempty(temp))
                     temp = [temp; indices(i,:)];
                 else
@@ -646,7 +646,7 @@ classdef CICDecoder
             end
             Downchirp_ind = temp;
         end
-        
+
         function [Data_buff peak_amp Up_ind FFO] = dnsamp_buff(obj, Data_stack,Upchirp_ind)
             %dnsamp_buff
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -660,7 +660,7 @@ classdef CICDecoder
             % Definition of Good Quality Frequency Track: Energy of FFT peak does not
             % leaks into adjacent bins.
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
+
             % load Parameters
             SF = obj.param_configs(1);
             BW = obj.param_configs(2);
@@ -669,9 +669,9 @@ classdef CICDecoder
             num_preamble = obj.param_configs(4);
             num_sync = obj.param_configs(5);
             num_DC = obj.param_configs(6);
-            
+
             DC = conj(obj.sym_to_data_ang([1],N));
-            
+
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             %%  Compute and Correct Frequency Offsets for each Preamble Detected in each Data_stack and Find the Peak Statistics needed for demodulation
             Up_ind = [];
@@ -681,8 +681,8 @@ classdef CICDecoder
             ffo = [];
             % n_pnt is the fft Factor - fft(Signal, n_pnt * length(Signal))
             n_pnt = 16;
-            
-            
+
+
             % iterate over all Upchirps that qualified 8 consecutive Peak condition
             for k = 1:size(Upchirp_ind,1)
                 if(Upchirp_ind(k,1) - N <= 0)
@@ -716,7 +716,7 @@ classdef CICDecoder
                     ffo = [ffo freq_off];
                     % Correct for the Frequency Offset in corresponding Data_Stack
                     Data_freq_off(m,:) = Data_stack(m,:) .* exp( (1i*2*pi*(freq_off./N)) .* (1:length(Data_stack(m,:))) );
-                    
+
                     clear data_wind data_fft ind_temp
                     % ind_temp contains the Frequency Bins around bin 1 where a
                     % Preamble Peak can lie, assumption (-5*BW/2^SF <= Freq_off <= 5*BW/2^SF)
@@ -732,7 +732,7 @@ classdef CICDecoder
                     peak_stats(k,m,1) = mean(a);
                     peak_stats(k,m,2) = var(a);
                     peak_stats(k,m,3) = std(a);
-                    
+
                     %%  Find the Right Data_stack to work with
                     % first find the stft of given stack at the Preamble Region,
                     % Spec is a 2D Matrix, rows - Freq. Bins & Col. - Time Samples
@@ -773,16 +773,16 @@ classdef CICDecoder
                 peak_amp = [peak_amp; reshape(peak_stats(k,b,:),1,[])];
                 Up_ind = [Up_ind; Upchirp_ind(k,:)];
             end
-            
+
         end
-        
+
         function [Preamble_ind, bin_offsets, Data_out, Peak_amp, ffo] = filter_false_postives(obj, Data_stack,Upchirp_ind,Peak,FFO)
             %FILTER_FALSE_POSTIVES Summary of this function goes here
             % This function takes in detected Possible Preambles and there relevant
             % data_stacks and then looks at points of concern for the presence of 2
             % SYNC-WORDS. This final filter removes false Positives with a very high
             % certanity
-            
+
             % load parameters
             SF = obj.param_configs(1);
             BW = obj.param_configs(2);
@@ -793,9 +793,9 @@ classdef CICDecoder
             num_DC = obj.param_configs(6);
             S1 = obj.param_configs(12);
             S2 = obj.param_configs(13);
-            
+
             DC = conj(obj.sym_to_data_ang(ones(1,num_preamble),N));
-            
+
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             ffo = [];
             Preamble_ind = [];
@@ -829,22 +829,22 @@ classdef CICDecoder
                 if(sync2_ind == 0)
                     sync2_ind = N;
                 end
-                
+
                 % Extract windows corresponding to 2 SYNC-WORDS
                 sync_wind = Data_stack(m,Upchirp_ind(m,num_preamble) + N : Upchirp_ind(m,num_preamble) + N + (num_sync*N) - 1);
                 % compute the thresholds for SYNC WORD's Peak and perform dechirping + FFT
                 sync_threshold_up = Peak(m,1) + 0.5*Peak(m,1);
                 sync_threshold_low = Peak(m,1) - 0.5*Peak(m,1);
-                
+
                 sync_word1 = abs(fft(sync_wind(1:N).*DC(1:N)));
                 sync_word2 = abs(fft(sync_wind(N+1:end).*DC(1:N)));
-                
+
                 if(sync_threshold_low < (2*sum(sync_word1)/N))
                     sync_threshold_low = (2*sum(sync_word1)/N);
                 elseif( sync_threshold_low < (2*sum(sync_word2)/N))
                     sync_threshold_low = (2*sum(sync_word2)/N);
                 end
-                
+
                 % Extract Peaks qualifying Peak Thresholds
                 syn1_pnts = obj.get_bounded_max(sync_word1,sync_threshold_up,sync_threshold_low);
                 syn2_pnts = obj.get_bounded_max(sync_word2,sync_threshold_up,sync_threshold_low);
@@ -861,23 +861,23 @@ classdef CICDecoder
                     ffo = [ffo; FFO(m)];
                 end
             end
-            
-            
+
+
         end
-        
+
         function [pnts] = get_bounded_max(obj, arr,up_thresh,low_thresh)
             %GET_BOUNDED_MAX, this function returns all points in arr that are >
             %low_thresh and < up_thresh
-            
+
             pnts_up = find(arr < up_thresh);
             pnts_low = find(arr > low_thresh);
             pnts = intersect(pnts_up,pnts_low);
         end
-        
+
         function [out] = get_max(obj, arr,threshold,num_pnts)
             %GET_MAX, this function returns uptil num_pnts many maximums above
             % 'threshold'
-            
+
             out = [];
             for i = 1:num_pnts
                 [a b] = max(arr);
@@ -888,34 +888,34 @@ classdef CICDecoder
                     arr(b) = 0;
                 end
             end
-            
+
         end
-        
+
         function par = param_configs(obj, id)
-            
+
             % LoRa PHY transmitting parameters
             LORA_SF = obj.loraSet.sf;%12;            % LoRa spreading factor
             LORA_BW = obj.loraSet.bw;%125e3;        % LoRa bandwidth
-            
+
             % Receiving device parameters
             Fs = obj.loraSet.sample_rate;%125e3*8;  % recerver's sampling rate
             num_preamble = obj.loraSet.Preamble_length;       % num of Preamble Base Upchirps in a Lora Pkt
             num_sync = 2;
             num_DC = 2.25;
             num_data_sym = obj.loraSet.payloadNum;
-            
+
             DC_corr_threshold = 0.2;        % Value to be calibrated based on Correlation plot's noise floor
             DC_corr_pnts_threshold = 40;
-            
+
             UC_corr_threshold = 0.1;        % Value to be calibrated based on Correlation plot's noise floor
             UC_corr_pnts_threshold = 40;
             SYNC1 = 8;
             SYNC2 = 16;
-            
+
             %     path = 'F:\Pyramid_temp\SF9BW125\RTL4';            % Add path to the file
             %     fil_nm = '\T17_26_30_SF9_BW125000.sigmf-data';                    % File name
-            
-            
+
+
             switch(id)
                 case 1,
                     par = LORA_SF;
@@ -947,11 +947,11 @@ classdef CICDecoder
                     par = path;
                 case 15,
                     par = fil_nm;
-                    
+
                 otherwise,
             end
         end
-        
+
         function [Spec] = stft_v1(obj, Rx_Buffer,N,DC,upsamp,dis)
             %STFT
             % This function produces a spectrogram of LoRa signal using Dechirping
@@ -967,11 +967,11 @@ classdef CICDecoder
                 end
             end
         end
-        
+
         function [Spec] = stft_v2(obj, Buffer,f_n)
             % This function produces a spectrogram of Dechirped LoRa signal and if plotted, gives a visualization of
             % continuous frequency tracks. (Best Frequerncy Resolution, worst Time Resolution (we already have that from Preamble detection))
-            
+
             w_n = f_n;
             Buff_len = length(Buffer); % Signal length
             % Frequency axis
@@ -989,7 +989,7 @@ classdef CICDecoder
                 iter_ind = -i_l:i_r;
                 ind1 = iter_ind + iter;   % Time Indexing of the original signal
                 ind = iter_ind + Lf +1;     % Frequency Indexing of the martix
-                
+
                 temp_buff = Buffer(ind1);
                 Spec(ind, iter) = temp_buff;
             end
@@ -997,30 +997,30 @@ classdef CICDecoder
             Spec = fft(Spec);
             Spec = (Spec*2) / f_n;  % normalizing the FFTs
         end
-        
+
         function [data] = sym_to_data_ang(obj, symbol,N)
             %SYM_TO_DATA returns an N-sample upchirp of data symbol
-            
+
             data = [];
             accumulator = 0;
-            
+
             for j = symbol
                 phase = -pi + ((j-1)*(2*pi/(N)));
                 temp = [];
                 for i = 1:N
                     accumulator = accumulator + phase;
                     polar_radius = 1;
-                    
+
                     [x, y] = pol2cart(accumulator, polar_radius);
-                    
+
                     temp(i) = complex(x, y);
-                    
+
                     phase = phase + (2*pi/(N));
                 end
                 data = [data temp];
             end
         end
-        
+
         function symbol_reformat(obj, demod_sym_stack)
             %% write symbols to txt file, to be fed to RPP0
             % Each Symbol appears on a column and symbols of different packets are separated
@@ -1032,22 +1032,22 @@ classdef CICDecoder
                 fprintf(fileID_1,'%d\n',demod_sym_stack(i,:));
             end
             fclose(fileID_1);
-            
+
         end
-        
+
         function [Upchirp_ind] = UC_location_corr_DC_based(obj, Data,DC_ind)
             %UC_location_corr_DC_based
             % this function takes in the Data buffer, the Downchirp indices from
             % previous function and looks locally for presence of an Upchirp in order
             % to increase the certainity of the presence of a pkt
-            
+
             % chirp variables
             SF = obj.param_configs(1);
             BW = obj.param_configs(2);
             Fs = obj.param_configs(3);
             N = 2^SF;
             upsampling_factor = Fs/BW;
-            
+
             % LORA pkt variables
             num_preamble = obj.param_configs(4);
             num_sync = obj.param_configs(5);
@@ -1056,9 +1056,9 @@ classdef CICDecoder
             % thresholds
             corr_threshold = obj.param_configs(10);
             pnts_threshold = obj.param_configs(11);
-            
+
             DC = conj(obj.sym_to_data_ang([1],N));
-            
+
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             if(size(DC_ind,1) == 0)
                 return;
@@ -1073,9 +1073,9 @@ classdef CICDecoder
                 pot_pream_ind(c,:) = DC_ind(i,1) - ((num_preamble + num_sync)*N) : N : DC_ind(i,1)- ((num_sync)*N);
                 c = c+1;
             end
-            
+
             Upchirp_ind = [];
-            
+
             %% Cross Correlation with a Single UpChirp
             temp_wind = [];
             for j = 1:size(pot_pream_ind,1)
@@ -1092,12 +1092,12 @@ classdef CICDecoder
                 end
                 temp_wind(j,:) = temp;
             end
-            
+
             array_stack = {};
-            
+
             % iterate over each Downchirp Detected
             for m = 1:size(temp_wind,1)
-                
+
                 n_samp_array = [];
                 peak_ind_prev = [];
                 for i = 0:floor(length(temp_wind)/N)-1
@@ -1120,15 +1120,15 @@ classdef CICDecoder
                 end
                 array_stack{m} = n_samp_array;
             end
-            
+
             for m = 1:length(array_stack)
                 n_samp_array = [];
                 n_samp_array = cell2mat(array_stack(m));
-                
+
                 for i = 1:length(n_samp_array)
                     c = 0;
                     ind_arr = n_samp_array(i) + N : N : n_samp_array(i) + N + ((num_preamble-2)*N);
-                    
+
                     for j = 1:length(ind_arr)
                         c = c + sum( n_samp_array == ind_arr(j) );
                     end
@@ -1139,16 +1139,16 @@ classdef CICDecoder
                             if(sum(n_samp_array(i) == Upchirp_ind(:,1)) ~= 1)
                                 Upchirp_ind = [Upchirp_ind; [n_samp_array(i) ind_arr]];
                             else
-                                
+
                             end
                         else
                             Upchirp_ind = [Upchirp_ind; [n_samp_array(i) ind_arr]];
                         end
                     end
                 end
-                
+
             end
-            
+
             % filter Upchirps that are with in 5 samples (same pkt detected multiple times due to peak energy spread)
             temp = [];
             indices = [zeros(1,num_preamble); Upchirp_ind];
@@ -1162,10 +1162,9 @@ classdef CICDecoder
                 end
             end
             Upchirp_ind = temp;
-            
+
         end
-        
-        
+
     end
-    
+
 end
