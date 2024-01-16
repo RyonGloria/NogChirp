@@ -30,7 +30,7 @@ void ButtonPressed();
 SX1278 radio = new Module(10, 15, -1, 16);
 
 float control_freq = 433.5;   // Channel frequency for controlling
-float exp_freq = 433.46875;   // Channel 1 frequency
+float exp_freq = 433.5625;   // Channel 1 frequency 433.46875
 float bw = 125.0;         // Bandwidth
 uint8_t control_sf = 7;   // Spreading factor for controlling
 uint8_t exp_sf = 10;      // Spreading factor of experiment

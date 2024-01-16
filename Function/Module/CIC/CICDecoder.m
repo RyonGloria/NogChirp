@@ -113,7 +113,7 @@ classdef CICDecoder
                 end
 
                 % Filter False Positives based on 2-SYNC Words detected
-                [Preamble_ind, bin_offsets, Data_out, Peak_amp,FFO] = obj.filter_false_postives(Data_freq_off,Upchirp_ind,Peak,FFO);
+                [Preamble_ind, bin_offsets, Data_out, Peak_amp,FFO] = obj.filter_false_postives(Data_freq_off,Upchirp_ind,Peak,FFO);% [0.125;0.1875]
                 %%  filter preambles that are with in 5 samples (same pkt detected twice due to Correlation peak energy spread)
                 temp = [];
                 temp_data = [];

@@ -21,14 +21,19 @@ SignalLength = loraSet.dine*80;  % 整个信号的最大长度
 CICDecoder = CICDecoder(loraSet);
 
 % 读取文件夹下所有采样值文件
-fileDir = '\\192.168.3.102\e\data\delay_231219\';
+% fileDir = '\\192.168.3.102\e\data\ChNum_1_m2\';
+% fileDir = '\\192.168.3.102\e\data\nodelay_231219\';
+% fileDir = '\\192.168.3.102\e\data\ChNum_3_l1m2h3\';
+% fileDir = '\\192.168.3.102\e\data\ChNum_3_l2m3h1\';
+fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
-[signal] = readSignalFile(fileDir, fileIn(7));
+[signal] = readSignalFile(fileDir, fileIn(1));
 
 CICDecoder = CICDecoder.decode(signal);
-
-disp(CICDecoder.binRecord);
+for i = 1 : 1: length(CICDecoder.binRecord)
+    disp(CICDecoder.binRecord(i));
+end
 
 
 % [810 722 386 614 850 593 126 1022 842 677 347 862 581 551 574 113 806 827 822 85 421 587 421]

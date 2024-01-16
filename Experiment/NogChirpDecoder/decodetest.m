@@ -11,10 +11,10 @@ samplesRate = 2e6;
 loraSet.payloadNum = 23; % payload数目
 obj = NogChirpDecoder(loraSet);
 % 读取文件夹下所有采样值文件
-fileDir = '\\192.168.3.102\e\data\delay_231219\';
+fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
-[signal] = readSignalFile(fileDir, fileIn(2));
+[signal] = readSignalFile(fileDir, fileIn(1));
 
 obj = obj.decode(signal);
 % disp(NogChirpDecoder.payloadBin);

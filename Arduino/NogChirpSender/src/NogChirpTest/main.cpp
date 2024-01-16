@@ -28,14 +28,13 @@ void ButtonPressed();
  * @param DIO1 pin:  3
  */
 SX1278 radio = new Module(10, 15, -1, 16);
-
 float control_freq = 433.5;   // Channel frequency for controlling
-float exp_freq = 433.53125;   // 433.46875  433.5  433.53125
+float exp_freq = 433.5;   // 433.46875  433.5  433.53125
 float bw = 125.0;         // Bandwidth
 uint8_t control_sf = 7;   // Spreading factor for controlling
-uint8_t exp_sf = 10;      // Spreading factor of experiment
-uint8_t cr = 5;           // Coding rate
-uint8_t syncword = 18;    // Syncword
+uint8_t exp_sf = 8;      // Spreading factor of experiment
+uint8_t cr = 5;           // Coding rate, 5: 4/5
+uint8_t syncword = 18;    // Syncword  SF[5, 6]:0x12 SF[7, 8, 9, 10, 11, 12]:0x34
 int8_t power = 10;        // Power
 uint8_t prelen = 8;       // Preamble length
 float symbol_time = pow(2, exp_sf - 7); // uint ms
@@ -70,7 +69,7 @@ void setup() {
     // initialize SX1278 with default settings
     Serial.print(F("[SX1278] Initializing ... "));
     // @params frequency, bandwidth, spreading factor, coding rate, syncword, power, preamble length
-    int state = radio.begin(control_freq, bw, control_sf, cr, syncword, power, prelen);
+    int state = radio.begin(exp_freq, bw, exp_sf, cr, syncword, power, prelen);
     // check if module started successfully
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("success!"));
@@ -79,84 +78,24 @@ void setup() {
         Serial.println(state);
         while (true);
     }
-
-    // set implicit mode, use for receiving control message
-    if (radio.implicitHeader(17) == RADIOLIB_ERR_NONE) {
-        Serial.println(F("[SX1278] 'receive' set implicitHeader, success!"));
-    } else {
-        Serial.print(F("[SX1278] 'receive' set implicitHeader, failed"));
-        while (true);
-    }
-
-    // disable CRC
-    if (radio.setCRC(false, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
-        Serial.println(F("[SX1278] disable CRC, failed!"));
-        while (true);
-    } else {
-        Serial.println(F("[SX1278] disable CRC, success!"));
-    }
-
-
 }
 
 void loop() {
-    // wait for incoming control message
-    String str;
-    if (radio.receive(str) == RADIOLIB_ERR_NONE) {
-        // print the data of the packet
-        Serial.print(F("[SX1278] Data:\t"));
-        Serial.println(str);
-
-        // judge if the control message is "Start"
-        if (str.indexOf("Start") != -1) {
-            Serial.println(F("[SX1278] get the Right command!"));
-
-            // set carrier frequency to exp_freq
-            if (radio.setFrequency(exp_freq) == RADIOLIB_ERR_INVALID_FREQUENCY) {
-                Serial.println(F("[SX1278] set to exp_freq, failed!"));
-                while (true);
-            } else {
-                Serial.println(F("[SX1278] set to exp_freq, success!"));
-            }
-
-            // set spreading factor to exp_sf
-            if (radio.setSpreadingFactor(exp_sf) == RADIOLIB_ERR_INVALID_SPREADING_FACTOR) {
-                Serial.println(F("[SX1278] set to exp_sf, failed!"));
-                while (true);
-            } else {
-                Serial.println(F("[SX1278] set to exp_sf, success!"));
-            }
-
-            // set implicit mode, use for sending experiment message
-            if (radio.implicitHeader(sizeof(data)) == RADIOLIB_ERR_NONE) {
-                Serial.println(F("[SX1278] 'transmit' set implicitHeader, success!"));
-            } else {
-                Serial.print(F("[SX1278] 'transmit' set implicitHeader, failed"));
-                while (true);
-            }
-
-            Send_Flag = true; // set Send_Flag to true
-
-        } else {
-            Serial.println(F("[SX1278] get the Wrong command!"));
-        }
-    }
-
     // if receive the control message, start sending experiment message
     if (Send_Flag)
     {
-        delay(100);
         // transmit packet
         int state = radio.transmit(data);
         if (state == RADIOLIB_ERR_NONE) {
-            Serial.println("transmit with " + String(exp_freq) + "MHz, success!");
+            Serial.println("transmit with (freq: " + String(exp_freq) + "MHz, bandwidth: "+ String(bw) +"KHz, sf: "+ String(exp_sf) +") success!");
         }
+
 
         leds[0] = CRGB::DarkRed;
         FastLED.show();
         delay(1000);
         FastLED.showColor(CRGB(0,0,0), 0);
-        delay(900);
+        delay(1000);
     }
 }
 

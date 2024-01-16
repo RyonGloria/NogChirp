@@ -137,8 +137,8 @@ classdef NogChirpDecoder < LoraDecoder
             pos = signalInfo(2, :);
             PowerAmp = obj.loraSet.fft_x;
             PowerThreshold = PowerAmp * winSize / 2; % 阈值为窗口大小能量的一半
-
-            for i = 1 : 100
+            PeakLen = length(signalInfo(1, :));
+            for i = 1 : PeakLen
                 if peak(1, i) < PowerThreshold
                     peak = peak(1 : i - 1);
                     pos = pos(1 : i - 1);
@@ -171,9 +171,9 @@ classdef NogChirpDecoder < LoraDecoder
             f0 = obj.loraSet.bw / 2 + obj.cfo;
 
             r_t = offset / obj.loraSet.fft_x;  % e.g. 1/8 (128/1024)
-            seg_1 = obj.d_dt * (0 : 1 : floor(r_t * obj.loraSet.dine)- 1);   % floor(x): x 向下取整
-            seg_2 = obj.d_dt * (floor(r_t * obj.loraSet.dine) : 1 : floor((r_t + winSize) * obj.loraSet.dine)- 1);
-            seg_3 = obj.d_dt * (floor((r_t + winSize) * obj.loraSet.dine) : 1 : obj.loraSet.dine- 1);
+            seg_1 = d_dt * (0 : 1 : floor(r_t * obj.loraSet.dine)- 1);   % floor(x): x 向下取整
+            seg_2 = d_dt * (floor(r_t * obj.loraSet.dine) : 1 : floor((r_t + winSize) * obj.loraSet.dine)- 1);
+            seg_3 = d_dt * (floor((r_t + winSize) * obj.loraSet.dine) : 1 : obj.loraSet.dine- 1);
             % seg_1 = d_dt * (0 : 1 : r_t * (obj.loraSet.dine- 1));
             % seg_2 = d_dt * (r_t * (obj.loraSet.dine- 1) : 1 : (r_t + winSize) * (obj.loraSet.dine- 1));
             % seg_3 = d_dt * ((r_t + winSize) * (obj.loraSet.dine- 1) : 1 : obj.loraSet.dine- 1);
@@ -285,11 +285,11 @@ classdef NogChirpDecoder < LoraDecoder
 
             % dechirp做FFT，获得最大峰值即为信道矩阵的信息
             signal = preambleSignalTemp((obj.SFDPos + 2.25)*dine + 1 : end);
-            for window_i = 1 : obj.loraSet.payloadNum
+            for window_i = 5 : obj.loraSet.payloadNum
                 windowChirp = signal((window_i - 1) * dine + 1 : window_i * dine);
                 
-                % save('Chirp_17.mat',"windowChirp");
-                % break;
+                save('TwoCollision_Chirp_1.mat',"windowChirp");
+                break;
                 signalOutRevise = obj.filterOutOtherCH(windowChirp);
                 obj = obj.decodeSildWindow(signalOutRevise, 1/4, 128);   % 信号, 窗口大小, 步长
                 % obj = obj.decodeChirpSildWin(signalOutRevise, 1/8, 128);   % 信号, 窗口大小, 步长
