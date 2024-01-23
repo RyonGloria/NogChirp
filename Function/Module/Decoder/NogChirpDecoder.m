@@ -7,8 +7,8 @@ classdef NogChirpDecoder < LoraDecoder
         preambleChannel;
         preambleSignal;
         preambleStartPos;
-        Downchirp_ind;
         preambleBin;
+        Downchirp_ind;
         channelArray;
         timeOffset;
         preambleEndPos;
@@ -25,7 +25,10 @@ classdef NogChirpDecoder < LoraDecoder
         preamblePeak;
         upchirpbin;
         downchirpbin;
-        fftBinDeWinRecord;   % 记录整个解码窗口的峰值位置
+        fftBinDeWinRecord;      % 记录整个解码窗口的峰值位置
+        detect_array;           % 存放检测到的bin
+        detect_array_count;     % 计数器
+        detect_array_number;    % 记录队列中存放有效数据的数目
     end
 
     methods
@@ -54,6 +57,9 @@ classdef NogChirpDecoder < LoraDecoder
             obj.errorFlag = false; % 每次进行setArgs相当于一次初始化，所以要对errorFlag置为false
             obj.errorMsg = "";
             obj.fftBinDeWinRecord = [];
+            obj.detect_array = zeros(1, obj.loraSet.fft_x);   % 存放信道检测到的峰值bin（bin最多为fft_x种）
+            obj.detect_array_count = zeros(1, obj.loraSet.fft_x);  % 计数器
+            obj.detect_array_number = 0;  % 记录信道队列中存放有效数据的数目
         end
 
         function obj = decode(obj, signals)
@@ -79,6 +85,32 @@ classdef NogChirpDecoder < LoraDecoder
             % obj = obj.singleDecode();
         end
 
+        function obj = decodeTest(obj, signals)
+            obj = obj.clear();
+
+            obj.preambleSignal = signals;
+
+            windowsNum = fix(length(obj.preambleSignal) / obj.loraSet.dine); % 计算需要移动多少个窗口进行信号检测和解调
+
+            for window_i = 1 : windowsNum % 开始扫描每一个窗口，发现其中的premable
+                windowChirp = obj.preambleSignal((window_i - 1) * obj.loraSet.dine + 1 : window_i * obj.loraSet.dine);
+                [obj, preambleBinTmp] = obj.detect(windowChirp);
+                if ~isempty(preambleBinTmp)
+                    disp("======================================preamble bin: [" + regexprep(num2str(preambleBinTmp), '\s+', ' ') + "]======================================");
+                    % 根据detect的结果进行解调
+                    for num = 1:length(preambleBinTmp)
+                        obj.window = window_i;
+                        obj.preambleBin = preambleBinTmp(num);
+
+                        obj = obj.detectPreambleEndPosBehind();
+                        disp("preambleEndPos: " + num2str(obj.preambleEndPos));
+                    end
+                end
+            end
+        end
+
+
+
         % 方法: payload de-chirp (Default)
         % 参数:
         % 结果: obj.payloadBin
@@ -103,6 +135,7 @@ classdef NogChirpDecoder < LoraDecoder
 
         % 方法: chirp de-chirp (Default)
         % 参数:
+        % -- chirp: 信号
         % 结果: [signalOut]
         function [signalOut] = decodeChirp(obj, chirp)
             S_t = obj.cfoDownchirp .* chirp;
@@ -110,21 +143,41 @@ classdef NogChirpDecoder < LoraDecoder
             signalOut = dechirp_fft(1 : obj.loraSet.fft_x) + dechirp_fft(obj.loraSet.dine - obj.loraSet.fft_x + 1 : obj.loraSet.dine);
         end
 
-        % 方法: 高通滤波, 保留 -bw/2 到 bw/2 的信号
+        % 方法: 带通滤波, 保留 satrtFreq 到 endFreq 的信号
         % 参数:
         % -- chirp: 信号
+        % -- order: 滤波器阶数
+        % -- satrtFreq: 起始频率
+        % -- endFreq: 结束频率
         % 结果: [signalOutRevise]
-        function [signalOutRevise] = filterOutOtherCH(obj, chirp)
-            f_pass = obj.loraSet.bw / 2;    % 低通滤波器频率范围, 只保留 -bw/2 到 bw/2 的信号。
+        function [signalOutRevise] = filterOutOtherCH(obj, chirp, order, satrtFreq, endFreq)
+            if nargin < 3   % 如果没有提供对应输入参数，则设置默认值
+                order = 200;   % 滤波器阶数
+                satrtFreq = 0;
+                endFreq = obj.loraSet.bw / 2;
+            elseif nargin == 3
+                satrtFreq = 0;
+                endFreq = obj.loraSet.bw / 2;
+            end
+
+            f_pass = [satrtFreq endFreq];    % 通带滤波器频率范围, 只保留 satrtFreq 到 endFreq 的信号。
             w_pass = f_pass / (obj.loraSet.sample_rate/2);  % 计算归一化频率
-            order = 200;   % 滤波器阶数
-            b = fir1(order, w_pass, 'low');   % FIR 低通滤波器
+
+            if satrtFreq ~= 0
+                b = fir1(order, [w_pass(1) w_pass(2)], 'bandpass');   % FIR 带通滤波器
+            else
+                b = fir1(order, w_pass(2), 'low');   % FIR 低通滤波器
+            end
+
             delay = mean(grpdelay(b, obj.loraSet.dine, obj.loraSet.sample_rate));   % 计算滤波器的延迟
             signalIn = chirp;
             signalIn(obj.loraSet.dine + 1 : obj.loraSet.dine + delay) = 0;  % 延迟补零 e.g. dine:(16384 -> 16884)
             signalOutRevise = filter(b, 1, signalIn);  % 滤波
 
             signalOutRevise(1 : delay) = [];  % 去除前面部分的延迟偏移
+            % signalOutRevise(obj.loraSet.dine - delay + 1 : obj.loraSet.dine) = 1;
+            % signalOutRevise = signalOutRevise(1 : obj.loraSet.dine);   % 截取原始信号长度
+
         end
 
         % 方法: 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
@@ -161,13 +214,11 @@ classdef NogChirpDecoder < LoraDecoder
                     noneArr = zeros(size(seg));
                 end
             end
-
             cmx = 1 + 1 * 1i;
             pre_dir = 2 * pi;
-            d_symbols_per_second = obj.loraSet.bw / obj.loraSet.fft_x;
-            T = -0.5 * obj.loraSet.bw * d_symbols_per_second;
-            d_samples_per_second = obj.loraSet.sample_rate;       % sdr-rtl的采样率
-            d_dt = 1/d_samples_per_second;         % 采样点间间隔的时间
+            Ns = obj.loraSet.bw / obj.loraSet.fft_x;  % 1s 内的 symbol 数 (Ns = 1 / Ts = bw / 2^SF)
+            T = -0.5 * obj.loraSet.bw * Ns;
+            d_dt = 1 / obj.loraSet.sample_rate;       % 采样点间间隔的时间
             f0 = obj.loraSet.bw / 2 + obj.cfo;
 
             r_t = offset / obj.loraSet.fft_x;  % e.g. 1/8 (128/1024)
@@ -285,11 +336,10 @@ classdef NogChirpDecoder < LoraDecoder
 
             % dechirp做FFT，获得最大峰值即为信道矩阵的信息
             signal = preambleSignalTemp((obj.SFDPos + 2.25)*dine + 1 : end);
-            for window_i = 5 : obj.loraSet.payloadNum
+            for window_i = 2 : obj.loraSet.payloadNum + 1
                 windowChirp = signal((window_i - 1) * dine + 1 : window_i * dine);
-                
-                save('TwoCollision_Chirp_1.mat',"windowChirp");
-                break;
+                % filename = sprintf('TwoCollision_Chirp_%d.mat', window_i-1);
+                % save(filename, 'windowChirp');
                 signalOutRevise = obj.filterOutOtherCH(windowChirp);
                 obj = obj.decodeSildWindow(signalOutRevise, 1/4, 128);   % 信号, 窗口大小, 步长
                 % obj = obj.decodeChirpSildWin(signalOutRevise, 1/8, 128);   % 信号, 窗口大小, 步长
@@ -297,6 +347,95 @@ classdef NogChirpDecoder < LoraDecoder
                 disp(obj.fftBinDeWinRecord);
             end
             % obj.payloadBin = binArr;
+        end
+
+
+        function [obj, preambleBin] = detect(obj, chirp)
+            preambleBin = [];   % 用于存放检测出来的lora包的preamble bin
+            dine = obj.loraSet.dine;
+            fft_x = obj.loraSet.fft_x;
+
+            if isActive(obj, chirp)  % 如果这个信道存在信号
+                % 对这个信道的信号乘以downchirp，做FFT，通过findpeaks函数找到突出峰值对应的bin，来判断preamble特性
+                chirpTmp = chirp;
+                dechirp = chirpTmp .* obj.idealDownchirp;
+                dechirp_fft = abs(fft(dechirp, dine));
+                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+                % 找出若干个峰值
+                result = obj.findpeaksWithShift(dechirp_fft, fft_x);
+                deWinpeakposInfo = obj.powerExtraction(result, 1);  % 滤掉低于能量阈值的峰值
+                binPos = deWinpeakposInfo(2, :);
+                % disp("binPos: [" + regexprep(num2str(binPos), '\s+', ' ') + "]");
+                % 对每一个筛选过的峰值进行记录
+                detectArray = obj.detect_array;
+                detectArrayCount = obj.detect_array_count;
+                detectArrayNum = obj.detect_array_number;
+
+                for pos_i = 1:length(binPos)
+                    % disp("pos_i: " + pos_i);
+                    arr = obj.detect_array(1: detectArrayNum);
+                    indices = obj.findBin(arr, binPos(pos_i), fft_x);
+                    % indices = find(arr == binPos(pos_i) | abs(arr - binPos(pos_i)) == 1);
+                    % is_member = ismember(obj.detect_array(channel, 1:obj.detect_array_number(channel)), binPos(pos_i));
+                    % if obj.detect_array_number(channel) == 0 || sum(is_member) == 0
+                    % 如果检测队列为空或者检测队列中没有该元素或没有与该元素绝对值相差1的值，直接加入
+                    if obj.detect_array_number == 0 || isempty(indices)
+                        % 检测队列的总数量加1
+                        detectArrayNum = detectArrayNum + 1;
+                        % 将峰对应的位置加入到检测队列中
+                        detectArray(detectArrayNum) = binPos(pos_i);
+                        % 并使其对应的count置1
+                        detectArrayCount(detectArrayNum) = 1;
+                    else % 如果检测队列有该元素或与该元素绝对值相差1的值，对其记录的count加1
+                        % 找到对应的检测队列中的位置
+                        % find_pos = find(obj.detect_array(channel, 1:obj.detect_array_number(channel)) == binPos(pos_i));
+                        % 使其对应的count加1
+                        detectArrayCount(indices) = detectArrayCount(indices) + 1;
+                        % 修改纠正这个检测队列中的bin（调整1个bin）
+                        detectArray(indices) = binPos(pos_i);
+                    end
+                end
+                obj.detect_array = detectArray;
+                obj.detect_array_number = detectArrayNum;
+                obj.detect_array_count = detectArrayCount;
+
+                % 将在检测队列中未能出现在此次preamble的峰值给剔除掉
+                % 对检测队列中的每一个峰值进行遍历，找到没有在此次过滤出的峰出现的
+                detectArrayNum = obj.detect_array_number;
+                countTmp = 1;
+                for pos_i = 1:detectArrayNum
+                    % 发现检测队里中的峰值在此次中未出现
+                    binValue = obj.detect_array(countTmp);
+                    indices = obj.findBin(binPos, binValue, fft_x);
+                    if isempty(indices)
+                        % 在检测队列中进行删除
+                        obj.detect_array(countTmp:end) = [obj.detect_array(countTmp+1:end), 0];
+                        obj.detect_array_count(countTmp:end) = [obj.detect_array_count(countTmp+1:end), 0];
+                        obj.detect_array_number = obj.detect_array_number - 1;
+                    else
+                        countTmp = countTmp + 1;
+                    end
+                end
+                % 将检测队列中count数目等于7的元素放入检测成功的队列中
+                detectArrayNum = obj.detect_array_number;
+                countTmp = 1;
+                countThreshold = 5;
+                for pos_i = 1:detectArrayNum
+%                     if obj.detect_array_count(channel, countTmp) == 7
+                    if obj.detect_array_count(countTmp) == countThreshold
+                        % 将挑选出的lora包的preamble bin记录
+                        preambleBin = [preambleBin, obj.detect_array(countTmp)];
+                        % 将detect队列中对应元素删除，和上面做法相同
+                        obj.detect_array(countTmp:end) = [obj.detect_array(countTmp+1:end), 0];
+                        obj.detect_array_count(countTmp:end) = [obj.detect_array_count(countTmp+1:end), 0];
+                        obj.detect_array_number = obj.detect_array_number - 1;
+                    else
+                        countTmp = countTmp + 1;
+                    end
+                end
+            end
+            % TODO: 如果没有active则清除队列
+
         end
 
         function obj = detectPreambleBin(obj)
@@ -363,6 +502,168 @@ classdef NogChirpDecoder < LoraDecoder
             end
             obj.preambleEndPos = Preamble_start_pos;   % e.g. 9
             obj.preambleBin = Preamble_bin;   % e.g. 823
+        end
+
+        %{
+            检测当前信道下对应premableBin的最后一个preamble的位置（为后续cfo计算准备）
+            TODO: 因为涉及到多解码，建议把preambleEndPos信息作为输出传出
+        %}
+        function obj  = detectPreambleEndPosBehind(obj)
+            dine = obj.loraSet.dine;
+            fft_x = obj.loraSet.fft_x;
+            preamble_len = obj.loraSet.Preamble_length;
+            windowTmp = obj.window;
+            preambleSignalTmp = obj.preambleSignal;
+            preambleBinTmp = obj.preambleBin;
+
+            % 用于存储preambleLength+4数目窗口下，每个窗口的峰值
+            candidate = cell(1, preamble_len);
+            cancidateAmp = cell(1, preamble_len);
+
+            % 搜寻第7个preamble前后的chirp
+            for t = windowTmp : windowTmp+7
+                % 每一个窗口做FFT后，将获得的结果找出若干个峰值
+                signal_tmp = preambleSignalTmp(t*dine+1 : (t+1)*dine);
+                dechirp = signal_tmp .* obj.idealDownchirp;
+                dechirp_fft = abs(fft(dechirp, dine));
+                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+                % 找出若干个峰值
+                result = obj.findpeaksWithShift(dechirp_fft, fft_x);
+                % 记录峰值
+                candidate{t - windowTmp + 1} = result(2, :);
+                cancidateAmp{t - windowTmp + 1} = result(1, :);
+            end
+
+            % 找到每个窗口中，最接近preambleBin的值
+            [BinArray, AmpArray] = obj.findClosetSyncWordBin(candidate, cancidateAmp, preambleBinTmp);
+
+            % 根据sync word的特征找到最后一个preamble
+            Preamble_end_pos = obj.findPosWithSyncWord(BinArray, AmpArray);
+
+            % 处理找不到的情况
+            if exist('Preamble_end_pos', 'var') == 0 || Preamble_end_pos == 0
+                return;
+            else
+                obj.preambleEndPos = windowTmp + Preamble_end_pos - 2;
+                % 获取preamble的能量
+                signal_tmp = preambleSignalTmp((obj.preambleEndPos-1)*dine+1 : (obj.preambleEndPos)*dine);
+                dechirp = signal_tmp .* obj.idealDownchirp;
+                dechirp_fft = abs(fft(dechirp, dine));
+                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+                % 找出若干个峰值，峰值间间隔为leakWidth
+                result = obj.findpeaksWithShift(dechirp_fft, fft_x);
+                binPos = result(2, :);
+                % 记录峰值
+                [~, closest_idx] = min(abs(binPos - preambleBinTmp));
+                obj.preamblePeak = result(1, closest_idx);
+            end
+        end
+
+        %{
+            从输入的元胞数组中，找到每一个元胞数组中与输入的bin接近的所有值
+        %}
+        function [result, ampResult] = findClosetSyncWordBin(obj, cellArray, ampArray, bin)
+            fft_x = obj.loraSet.fft_x;
+            % 找到每个元胞数组（每个元素都是一个数组）元素中，接近bin的所有值
+            result = cell(1, length(cellArray));
+            ampResult = cell(1, length(cellArray));
+            % 整理要查找的所有bin的可能值
+            condition = zeros(3,3);
+            tmp = -8;
+            for i = 1:3 % 三种条件1,8,16
+                tmp = tmp + 8;
+                for k = 1:3 % 每种条件都为+1，-1，0的情况
+                    condition(i, k) = bin + tmp + k - 2;
+                    if condition(i, k) <= 0
+                        condition(i, k) = condition(i, k) + fft_x;
+                    elseif condition(i, k) > fft_x
+                        condition(i, k) = condition(i, k) - fft_x;
+                    end
+                end
+            end
+            for i = 1:length(cellArray) % 遍历每一行
+                row = cellArray{i}; % 获取当前行
+                rowAmp = ampArray{i};
+
+                % 找到绝对值差值小于等于1的值的索引
+                bin1 = row(ismember(row, condition(1, :)));
+                amp1 = rowAmp(ismember(row, condition(1, :)));
+                % indices1 = find(abs(row - bin) <= 1);
+                % 找到绝对值差值大于等于7小于等于9的值的索引
+                bin2 = row(ismember(row, condition(2, :)));
+                amp2 = rowAmp(ismember(row, condition(2, :)));
+                % indices2 = find(abs(row - bin) >= 7 & abs(row - bin) <= 9);
+                % 找到绝对值差值大于等于15小于等于17的值的索引
+                bin3 = row(ismember(row, condition(3, :)));
+                amp3 = rowAmp(ismember(row, condition(3, :)));
+                % indices3 = find(abs(row - bin) >= 15 & abs(row - bin) <= 17);
+
+                % 合并所有满足条件的索引
+                allBin = [bin1, bin2, bin3];
+                allAmp = [amp1, amp2, amp3];
+
+                % 如果找到了符合条件的数，存储它
+                if ~isempty(allBin)
+                    result{i} = allBin;
+                    ampResult{i} = allAmp;
+                else
+                    result{i} = 0;
+                    ampResult{i} = 0;
+                end
+            end
+        end
+
+        %{
+            在元胞数组（n*m的矩阵）中找到满足syncword特征的第一个窗口位置
+            BinArray：元胞数组
+            preamble_end_pos：满足sync word特征的
+        %}
+        function Preamble_end_pos = findPosWithSyncWord(obj, BinArray, AmpArray)
+            fft_x = obj.loraSet.fft_x;
+            Preamble_end_pos = 0;
+            for loop1 = 3:length(BinArray)
+                thirdArray = BinArray{loop1};
+                thirdAmpArray = AmpArray{loop1};
+                secondArray = BinArray{loop1-1};
+                secondAmpArray = AmpArray{loop1-1};
+                firstArray = BinArray{loop1-2};
+                firstAmpArray = AmpArray{loop1-2};
+                for loop2 = 1:length(thirdArray)
+                    thirdBin = thirdArray(loop2);
+                    thirdAmp = thirdAmpArray(loop2);
+                    % 创建一个查找窗口
+                    secondFindArr = zeros(1, 3);
+                    for value = 7:9
+                        secondFindArr(1, value-6) = thirdBin - value;
+                        if secondFindArr(1, value-6) <= 0
+                            secondFindArr(1, value-6) = secondFindArr(1, value-6) + fft_x;
+                        end
+                    end
+                    for loop3 = 1:length(secondArray)
+                        secondBin = secondArray(loop3);
+                        secondAmp = secondAmpArray(loop3);
+                        if any(ismember(secondFindArr, secondBin))
+                            firstFindArr = zeros(1, 3);
+                            for value = 7:9
+                                firstFindArr(1, value-6) = secondBin - value;
+                                if firstFindArr(1, value-6) <= 0
+                                    firstFindArr(1, value-6) = firstFindArr(1, value-6) + fft_x;
+                                end
+                            end
+                            for loop4 = 1:length(firstArray)
+                                firstBin = firstArray(loop4);
+                                firstAmp = firstAmpArray(loop4);
+                                if any(ismember(firstFindArr, firstBin))
+                                    if thirdAmp/firstAmp >= 0.5 && secondAmp/thirdAmp >= 0.5 && secondAmp/thirdAmp <= 1.5
+                                        Preamble_end_pos = loop1;
+                                        return;
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
         end
 
         % 利用 Preamble(Base-upchirp) 和 SFD(Base-downchirp) 相反偏移的性质，计算 CFO 和 winoffset
@@ -442,6 +743,42 @@ classdef NogChirpDecoder < LoraDecoder
             obj.upchirpbin = upchirp_peak;     % e.g. [13150, 13150, 13150, 13150, 13150, 13149, 13149, 13149]
             obj.downchirpbin = downchirp_peak;
         end
+
+
+        % 方法: 检测该信道该窗口内是否存在信号
+        % 参数:
+        % -- signals: 信号
+        % 结果: isActive：布尔值，代表是否存在信号
+        function [isActive] = isActive(obj, signals)
+            dine = obj.loraSet.dine;
+            fft_x = obj.loraSet.fft_x;
+            isActive = false;
+            % 通过FFT的峰值判断是否存在信号
+            dechirp = signals .* obj.idealDownchirp;
+            dechirp_fft = abs(fft(dechirp, dine));
+            dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+            % 找到最大值
+            [amp, ~] = max(dechirp_fft);
+            % 最大值超过窗口均值的十倍
+            if amp > mean(dechirp_fft) * 10
+                isActive = true;
+            end
+        end
+       
+        function binIndex = findBin(obj, binPos, findBin, fftX)
+            arrLength = length(binPos);
+            binPosRing = [binPos - fftX, binPos, binPos + fftX];
+            index = find(binPosRing == findBin | abs(binPosRing - findBin) == 1, 1);
+            % [~, closestIndex] = min(abs(binPosRing - findBin));
+            if index <= arrLength
+                binIndex = index;
+            elseif index > arrLength*2
+                binIndex = index - 2*arrLength;
+            else
+                binIndex = index - arrLength;
+            end
+        end
+
 
         function obj = getSFDPos(obj)
             fftX = obj.loraSet.fft_x;

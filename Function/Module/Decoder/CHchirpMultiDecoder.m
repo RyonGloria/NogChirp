@@ -174,7 +174,7 @@ classdef CHchirpMultiDecoder < CHchirpDecoder
                 signal_tmp = splitSignal(channel, :);
                 dechirp = signal_tmp .* obj.idealDownchirp;
                 dechirp_fft = abs(fft(dechirp, dine));
-                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine); 
+                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
                 % 找出若干个峰值，每个峰值间隔需超过leakWidth
                 result = obj.findpeaksWithShift(dechirp_fft, fft_x);
                 binPos = result(2, :);
