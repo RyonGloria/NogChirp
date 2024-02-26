@@ -11,7 +11,8 @@ samplesRate = 2e6;
 loraSet.payloadNum = 23; % payload数目
 obj = NogChirpDecoder(loraSet);
 % 读取文件夹下所有采样值文件
-fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';
+% fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';
+fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
 [signal] = readSignalFile(fileDir, fileIn(1));
@@ -22,3 +23,8 @@ obj = obj.decodeTest(signal);
 
 toc;
 fclose all;
+
+% ======================================preamble bin: [980]======================================
+% preambleEndPos: 9
+% ======================================preamble bin: [958]======================================
+% preambleEndPos: 21
