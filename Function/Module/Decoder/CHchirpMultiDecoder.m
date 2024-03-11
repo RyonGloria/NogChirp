@@ -111,7 +111,6 @@ classdef CHchirpMultiDecoder < CHchirpDecoder
                             end
                             obj.detectCount = obj.detectCount + 1;
                         end
-                        
                     end
                 end
             end
@@ -152,7 +151,6 @@ classdef CHchirpMultiDecoder < CHchirpDecoder
                             end
                             obj.detectCount = obj.detectCount + 1;
                         end
-                        
                     end
                 end
             end
