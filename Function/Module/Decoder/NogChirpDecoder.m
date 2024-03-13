@@ -2,21 +2,11 @@ classdef NogChirpDecoder < LoraDecoder
     properties
         payloadBin;
         BinRecord;  % 记录临时的bin值
-        splitSignal;
-        channelList;
-        subchirpNum;
-        preambleChannel;
         preambleSignal;
         preambleStartPos;
         preambleBin;
-        Downchirp_ind;
-        channelArray;
-        timeOffset;
         preambleEndPos;
         SFDPos;
-        channelNum;
-        channelMatrix;
-        OverBandBw;
         window;
         errorFlag;
         errorMsg;
@@ -42,11 +32,8 @@ classdef NogChirpDecoder < LoraDecoder
             % 清空类中的某些中间值
             obj.payloadBin = {};
             obj.BinRecord = [];
-            obj.splitSignal = [];
             obj.preambleSignal = [];
             obj.preambleStartPos = [];
-            obj.channelArray = [];
-            obj.timeOffset = [];
             obj.preambleEndPos = [];
             obj.SFDPos = [];
             obj.peakStandard = [];
@@ -135,8 +122,6 @@ classdef NogChirpDecoder < LoraDecoder
                     end
                 end
             end
-
-
         end
 
         %% 方法: 非正交信道解码
