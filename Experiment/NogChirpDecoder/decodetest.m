@@ -27,6 +27,7 @@ disp(['payloadBin dimensions: ', num2str(dimensions)]);
 disp(['payloadBin lengths: ', num2str(lengths)]);
 % 循环遍历每个单元格
 for i = 1:numel(obj.payloadBin)
+    fprintf('\n');
     disp(['Bin Cell ', num2str(i), ':']);
     fprintf('%5d', obj.payloadBin{i}); % 控制每个数字的宽度为10
 end

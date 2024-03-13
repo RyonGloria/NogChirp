@@ -93,7 +93,7 @@ classdef NogChirpDecoder < LoraDecoder
         function obj = decodeTwoCH(obj, signals)
             obj = obj.clear();
 
-            for Ch_i = 1 : 1
+            for Ch_i = 1 : 2
                 disp("======================================Channel: " + num2str(Ch_i) + "======================================");
                 if Ch_i == 2
                     signals = obj.rechangeSignalFreq(signals, - obj.loraSet.bw / 4);  % 中心频率对齐第二信道
@@ -454,12 +454,12 @@ classdef NogChirpDecoder < LoraDecoder
             deWinpeakposInfo = obj.powerExtraction(signalWhole, 1);
             [OrgsignalPos] = deWinpeakposInfo(2, :);
             [OrgsignalPeak] = deWinpeakposInfo(1, :);
-            disp(['Filter peaks: [', num2str(OrgsignalPeak), ']']);
-            disp(['Candidate pos: [', num2str(OrgsignalPos), ']']);
+            % disp(['Filter peaks: [', num2str(OrgsignalPeak), ']']);
+            % disp(['Candidate pos: [', num2str(OrgsignalPos), ']']);
 
             chirpFreqIncre = obj.rechangeSignalFreq(chirp, FreqShift);
 
-            chirpFreqIncreRevise = obj.filterOutOtherCH(chirpFreqIncre, 100, FreqFliterStart, FreqFliterEnd);
+            chirpFreqIncreRevise = obj.filterOutOtherCH(chirpFreqIncre, 200, FreqFliterStart, FreqFliterEnd);
 
             S_t = chirpFreqIncreRevise .* obj.cfoFreqShiftDownchirp(-FreqShift);
             dechirp_fft = abs(fft(S_t, obj.loraSet.dine));
@@ -469,8 +469,8 @@ classdef NogChirpDecoder < LoraDecoder
             signalPEOut = obj.powerExtraction(signalInfo, 1/4);   % 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
             [signalPos] = signalPEOut(2, :);
             [signalPeak] = signalPEOut(1, :);
-            disp(['Filter peaks: [', num2str(signalPeak), ']']);
-            disp(['Filter pos: [', num2str(signalPos), ']']);
+            % disp(['Filter peaks: [', num2str(signalPeak), ']']);
+            % disp(['Filter pos: [', num2str(signalPos), ']']);
             % subplot(211);
             % stft(chirp, obj.loraSet.sample_rate, 'Window', kaiser(64, 2), 'OverlapLength', 32, 'FFTLength', obj.loraSet.fft_x);
             % ylim([-0.1875, 0.1875]);
@@ -479,7 +479,7 @@ classdef NogChirpDecoder < LoraDecoder
             % ylim([-0.1875, 0.1875]);
             for i = 1 : length(signalPos)
                 pos_i = OrgsignalPos == signalPos(i);
-                if OrgsignalPeak(pos_i) <= signalPeak(i) * 4
+                if any(OrgsignalPeak(pos_i) < signalPeak(i) * 5) && any(OrgsignalPeak(pos_i) > signalPeak(i) * 10 / 3)
                     obj.BinRecord = [obj.BinRecord signalPos(i)];
                 end
             end
