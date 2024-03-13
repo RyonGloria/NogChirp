@@ -16,8 +16,23 @@ fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
 [signal] = readSignalFile(fileDir, fileIn(1));
-obj = obj.decodeTest(signal);
 
+%% Decode Two Channel
+obj = obj.decodeTwoCH (signal);
+dimensions = size(obj.payloadBin);
+% Get the length of each dimension
+lengths = cellfun(@length, obj.payloadBin);
+fprintf('\n');
+disp(['payloadBin dimensions: ', num2str(dimensions)]);
+disp(['payloadBin lengths: ', num2str(lengths)]);
+% 循环遍历每个单元格
+for i = 1:numel(obj.payloadBin)
+    disp(['Bin Cell ', num2str(i), ':']);
+    fprintf('%5d', obj.payloadBin{i}); % 控制每个数字的宽度为10
+end
+fprintf('\n');
+
+%% 
 % obj = obj.decode(signal);
 % disp(NogChirpDecoder.payloadBin);
 
