@@ -1,16 +1,18 @@
-% 测试CHchirpDecoder
+% 测试重叠信号解码
 clear;
-fclose all;     %关闭所有matlab打开的文件
+fclose all;     % 关闭所有 matlab 打开的文件
 tic;            % 打开计时器
 
-% 读取配置和验证文件
+% 基本参数设置
 sf = 10;
 bw = 125e3;
 samplesRate = 2e6;
+
+% 读取配置和验证文件
 [loraSet] = readLoraSet('GeneralConfig.json', sf, bw, samplesRate);
-loraSet.payloadNum = 23; % payload数目
+loraSet.payloadNum = 23;  % payload数目
 obj = NogChirpDecoder(loraSet);
-% 读取文件夹下所有采样值文件
+%% 读取文件夹下所有采样值文件
 % fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';
 fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
@@ -18,24 +20,20 @@ fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 [signal] = readSignalFile(fileDir, fileIn(1));
 
 %% Decode Two Channel
-obj = obj.decodeTwoCH (signal);
+obj = obj.decodeTwoCH(signal);
 dimensions = size(obj.payloadBin);
 % Get the length of each dimension
 lengths = cellfun(@length, obj.payloadBin);
-fprintf('\n');
-disp(['payloadBin dimensions: ', num2str(dimensions)]);
-disp(['payloadBin lengths: ', num2str(lengths)]);
+disp("⭐payloadBin dimensions: " + num2str(dimensions(1))+ "x" + num2str(dimensions(2)));
+disp("⭐payloadBin lengths: " + num2str(lengths));
 % 循环遍历每个单元格
 for i = 1:numel(obj.payloadBin)
     fprintf('\n');
-    disp(['Bin Cell ', num2str(i), ':']);
-    fprintf('%5d', obj.payloadBin{i}); % 控制每个数字的宽度为10
+    disp(['⭐Bin Cell -', num2str(i), '-']);
+    fprintf('%5d', obj.payloadBin{i}); % 控制每个数字的宽度为 10
 end
 fprintf('\n');
 
-%% 
-% obj = obj.decode(signal);
-% disp(NogChirpDecoder.payloadBin);
 
 toc;
 fclose all;
