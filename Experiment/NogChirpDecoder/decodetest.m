@@ -17,7 +17,7 @@ obj = NogChirpDecoder(loraSet);
 fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
-[signal] = readSignalFile(fileDir, fileIn(1));
+[signal] = readSignalFile(fileDir, fileIn(9));
 
 %% Decode Two Channel
 obj = obj.decodeTwoCH(signal);
@@ -28,9 +28,11 @@ disp("⭐payloadBin dimensions: " + num2str(dimensions(1))+ "x" + num2str(dimens
 disp("⭐payloadBin lengths: " + num2str(lengths));
 % 循环遍历每个单元格
 for i = 1:numel(obj.payloadBin)
-    fprintf('\n');
-    disp(['⭐Bin Cell -', num2str(i), '-']);
-    fprintf('%5d', obj.payloadBin{i}); % 控制每个数字的宽度为 10
+    fprintf('\n⭐Bin Cell -%d-\n', i);
+    % 使用 cellfun 将当前行的每个元素格式化为字符串，并连接起来
+    row_str = cellfun(@(x) sprintf('%s', mat2str(x)), obj.payloadBin{i}, 'UniformOutput', false);
+    % 使用 strjoin 将格式化后的字符串连接起来，并输出
+    disp(strjoin(row_str, ' '));
 end
 fprintf('\n');
 
