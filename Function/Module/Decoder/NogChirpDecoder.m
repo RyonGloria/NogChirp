@@ -298,6 +298,26 @@ classdef NogChirpDecoder < LoraDecoder
             groupInfo = [peak; pos];
         end
 
+        %% 方法: 提取候选峰, 筛选能量大于底噪的峰值对应的 bin 值
+        % 参数:
+        % -- signalInfo: 候选峰信息(峰值, Bin 值)
+        % -- NoiseFloor: 底噪
+        % 结果: groupInfo
+        %% ✔
+        function [groupInfo] = powerLagerNF(obj, signalInfo, NoiseFloor)
+            peak = signalInfo(1, :);
+            pos = signalInfo(2, :);
+            PeakLen = length(signalInfo(1, :));
+            for i = 1 : PeakLen
+                if peak(1, i) < NoiseFloor
+                    peak = peak(1 : i - 1);
+                    pos = pos(1 : i - 1);
+                    break;
+                end
+            end
+            groupInfo = [peak; pos];
+        end
+
         %% 方法: 生成下行扩频信号滑动窗口, 自左向右, winSize 为窗口大小(0 ~ 1), offset 为窗口偏移(0 ~ 2^SF - 1)
         % 参数:
         % -- winSize: 窗口大小(0 ~ 1)
@@ -520,6 +540,7 @@ classdef NogChirpDecoder < LoraDecoder
             dechirp_fft = obj.decodeChirp(chirpNonOverlapping, 3, -FreqShift);  % 非重叠窗口解码, (信号, downchirp 类型, 频率偏移)
             signalInfo = obj.findpeaksWithShift(dechirp_fft, obj.loraSet.fft_x);
             signalPEOut = obj.powerExtraction(signalInfo, 1/4);   % 提取候选峰, 筛选能量大于阈值的峰值对应的 bin 值
+            % signalPEOut = obj.powerLagerNF(signalInfo, mean(dechirp_fft));   % 筛选能量大于底噪的峰
             [NonOverlappingPos] = signalPEOut(2, :);
             % subplot(212);
             % plot(dechirp_fft);
@@ -714,11 +735,11 @@ classdef NogChirpDecoder < LoraDecoder
             preambleSignalTmp = obj.preambleSignal;
             preambleBinTmp = obj.preambleBin;
 
-            % 用于存储preambleLength+4数目窗口下，每个窗口的峰值
+            % 用于存储 preambleLength + 4 数目窗口下，每个窗口的峰值
             candidate = cell(1, preamble_len);
             cancidateAmp = cell(1, preamble_len);
 
-            % 搜寻第7个preamble前后的chirp
+            % 搜寻第 7 个 preamble 前后的 chirp
             for t = windowTmp : windowTmp + 7
                 % 每一个窗口做FFT后，将获得的结果找出若干个峰值
                 signal_tmp = preambleSignalTmp(t*dine+1 : (t+1)*dine);

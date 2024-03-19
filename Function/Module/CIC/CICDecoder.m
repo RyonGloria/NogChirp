@@ -14,21 +14,21 @@ classdef CICDecoder
             %% Loading variables
             % chirp variables
             obj.binRecord = cell(1, 0);
-            SF = obj.param_configs(1);
-            BW = obj.param_configs(2);
-            Fs = obj.param_configs(3);
-            N = 2^SF;
-            upsampling_factor = Fs/BW;
+            SF = obj.param_configs(1);   % eg: 10
+            BW = obj.param_configs(2);   % eg: 125e3
+            Fs = obj.param_configs(3);   % eg: 2e6
+            N = 2^SF;                    % eg: 1024
+            upsampling_factor = Fs/BW;   % eg: 16
             Ts = 1/Fs;
 
             % LORA pkt variables
-            num_preamble = obj.param_configs(4);
-            num_sync = obj.param_configs(5);
-            num_DC = obj.param_configs(6);
-            num_data_sym = obj.param_configs(7);
+            num_preamble = obj.param_configs(4);   % eg: 8
+            num_sync = obj.param_configs(5);       % eg: 2
+            num_DC = obj.param_configs(6);         % eg: 2.25
+            num_data_sym = obj.param_configs(7);   % eg: 23
             preamble_sym = 1;
-            pkt_len = num_preamble + num_sync + num_DC + num_data_sym;
-            num_samples = pkt_len * N;
+            pkt_len = num_preamble + num_sync + num_DC + num_data_sym;   % eg: 32.25
+            num_samples = pkt_len * N;             % eg: 32.25 × 1024
 
             % Generating a Downchirp
             DC = conj(obj.sym_to_data_ang([1],N));
@@ -270,7 +270,6 @@ classdef CICDecoder
                 Pream_ind = temp;
                 obj.detectCount = obj.detectCount + size(Pream_ind, 1);
             end
-
         end
 
 
@@ -647,7 +646,7 @@ classdef CICDecoder
             Downchirp_ind = temp;
         end
 
-        function [Data_buff peak_amp Up_ind FFO] = dnsamp_buff(obj, Data_stack,Upchirp_ind)
+        function [Data_buff, peak_amp, Up_ind, FFO] = dnsamp_buff(obj, Data_stack,Upchirp_ind)
             %dnsamp_buff
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             % Data_stack contains All possible downsampled Buffers with different starting sample for downsampling
@@ -998,7 +997,7 @@ classdef CICDecoder
             Spec = (Spec*2) / f_n;  % normalizing the FFTs
         end
 
-        function [data] = sym_to_data_ang(obj, symbol,N)
+        function [data] = sym_to_data_ang(obj, symbol, N)
             %SYM_TO_DATA returns an N-sample upchirp of data symbol
 
             data = [];

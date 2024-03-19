@@ -17,7 +17,7 @@ obj = NogChirpDecoder(loraSet);
 fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 % 从文件中读取信号流
-[signal] = readSignalFile(fileDir, fileIn(9));
+[signal] = readSignalFile(fileDir, fileIn(1));
 
 %% Decode Two Channel
 obj = obj.decodeTwoCH(signal);
