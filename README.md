@@ -10,6 +10,8 @@
 
 4. 对重叠部分的窗口和非重叠部分的窗口滤波，De-chirp 后取 Bin 值的交集。
 
+5. 滑动窗口中不同 Bin 值对应的能量方差。
+
 
 
 ## 实验设计
@@ -17,17 +19,14 @@
 > **Channel 1**：
 >
 > - 中心频率：433.46875 MHz
-> - 频带范围：
->
-> **Channel 2**：
->
-> - 中心频率：433.5 MHz
-> - 频带范围：
->
+> 
+>**Channel 2**：
+> 
+>- 中心频率：433.5 MHz
+> 
 > **Channel 3**：
 >
 > - 中心频率：433.53125 MHz
-> - 频带范围：
 
 ![NogChannel](Figure/NogChannel.png)
 
@@ -43,16 +42,10 @@
 ### 文件目录
 
 - 虚拟机共享文件夹：\\192.168.3.102\e\share\samples\
-
-- Channel 2 信道无冲突路径：\\192.168.3.102\e\data\channel2_231220\
-
-- Channel 1/3 发送数据时间分别偏移 50/100 ms：\\192.168.3.102\e\data\delay_231219\
-
 - Channel 1/2/3无时间偏移：\\192.168.3.102\e\data\nodelay_231219\
+- Channel 1/2/3：\\192.168.3.102\e\data\ChNum_3_l1m2h3\
 
 ### Payload Detection
-
-
 
 1. CIC 方法：先检测 SFD，根据 SFD 位置检测前面的 preamble（低信噪比下检测是否会出问题）
 2. 

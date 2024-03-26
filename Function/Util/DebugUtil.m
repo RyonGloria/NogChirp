@@ -21,7 +21,6 @@ classdef DebugUtil
                 obj.fileID = fopen(out, 'w');
                 fclose(obj.fileID);
             end
-            
         end
 
         function debug(obj, prefix, message)
@@ -91,7 +90,7 @@ classdef DebugUtil
             end
             if(obj.debugLevel <= obj.WARNING)
                 if isstring(message)
-                    fprintf(obj.fileID, prefix + "WARNING:" + message+ "\n");
+                    fprintf(obj.fileID, prefix + "• WARNING:" + message+ "\n");
                 elseif iscell(message)
                     for row = 1:size(message, 1)
                         fprintf(obj.fileID, prefix);
