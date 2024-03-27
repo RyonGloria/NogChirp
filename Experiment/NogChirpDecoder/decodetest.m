@@ -19,7 +19,7 @@ fileDir = '\\192.168.3.102\e\share\samples\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 true_bin = importdata(strcat('.\Config\bin\NogSF', string(sf), '.txt'))';
 % 从文件中读取信号流
-[signal] = readSignalFile(fileDir, fileIn(1));
+[signal] = readSignalFile(fileDir, fileIn(24));
 
 %% Decode Two Channel
 obj = obj.decodeTwoCH(signal);

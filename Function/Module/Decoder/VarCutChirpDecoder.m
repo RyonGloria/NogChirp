@@ -17,24 +17,22 @@ classdef VarCutChirpDecoder < LoraDecoder
         preamblePeak;
         upchirpbin;
         downchirpbin;
-        detectedPktAll;            % 记录解码信号的信息 (Channel, preambleBin, preambleEndPos, preamblePeak, SFDPos, CFO, winOffset)
+        detectedPktAll;        % 记录解码信号的信息 (Channel, preambleBin, preambleEndPos, preamblePeak, SFDPos, CFO, winOffset, rebuildSignal)
         detectArray;           % 存放检测到的 bin
         detectArrayCount;      % 计数器
         detectArrayNum;        % 记录队列中存放有效数据的数目
     end
 
     methods
-        % 初始化方法
+        %% 初始化方法
         function obj = VarCutChirpDecoder(loraSet, DebugUtil)
             obj@LoraDecoder(loraSet);
             % 初始化 debug 工具
             obj.DebugUtil = DebugUtil;
             obj.DebugUtil.info("", "初始化 VarCutChirpDecoder");
         end
-        % EXP = 4;
-        % WARNING = 3;
-        % INFO = 2;
-        % DEBUG = 1;
+
+        %% 方法: 清空类中的某些中间值
         function obj = clear(obj)
             % 清空类中的某些中间值
             obj.BinRecord = {};
@@ -56,8 +54,10 @@ classdef VarCutChirpDecoder < LoraDecoder
             obj.detectArrayNum = 0;  % 记录信道队列中存放有效数据的数目
         end
 
+        %% 方法: 解码
         function obj = decode(obj, signals)
             obj = obj.clear();
+            dineTmp = obj.loraSet.dine;
             signalsTmp = signals;
             obj.payloadBin = {};
             obj.detectedPktAll = {};
@@ -70,10 +70,10 @@ classdef VarCutChirpDecoder < LoraDecoder
                     signalsTmp = obj.rechangeSignalFreq(signals, - obj.loraSet.bw / 4);  % 中心频率对齐第二信道
                 end
 
-                windowsNum = fix(length(signalsTmp) / obj.loraSet.dine); % 计算需要移动多少个窗口进行信号检测和解调
+                windowsNum = fix(length(signalsTmp) / dineTmp); % 计算需要移动多少个窗口进行信号检测和解调
                 % FFT_plot(obj.preambleSignal, obj.loraSet, obj.idealDownchirp, 23);
                 for window_i = 1 : windowsNum % 开始扫描每一个窗口，发现其中的 premable
-                    windowChirp = signalsTmp((window_i - 1) * obj.loraSet.dine + 1 : window_i * obj.loraSet.dine);
+                    windowChirp = signalsTmp((window_i - 1) * dineTmp + 1 : window_i * dineTmp);
                     [obj, preambleBinTmp] = obj.detect(windowChirp);
                     if ~isempty(preambleBinTmp)
                         % obj.DebugUtil.debug("\t", "♦ preamble bin: [" + regexprep(num2str(preambleBinTmp), '\s+', ' ') + "]");
@@ -115,54 +115,54 @@ classdef VarCutChirpDecoder < LoraDecoder
                             end
                             % disp("  • SFD Position: " + num2str(obj.SFDPos));
                             obj.DebugUtil.debug("\t", " SFD Real Position: " + obj.SFDPos + "\n");
-                            obj.detectedPktAll = [obj.detectedPktAll [Ch_i, obj.preambleBin, obj.preambleEndPos, obj.preamblePeak, obj.SFDPos, obj.cfo, obj.winOffset]];
-                            % end decoding code
+                            % 信号所在信道, preamble Bin, preamble 结束位置, preamble 峰值, SFD 准确位置, CFO, winOffset, 修正 winOffset 后的信号
+                            readytoAdd = {Ch_i, obj.preambleBin, obj.preambleEndPos, obj.preamblePeak, obj.SFDPos, obj.cfo, obj.winOffset, obj.preambleSignal};
+                            obj.detectedPktAll = [obj.detectedPktAll; readytoAdd];
                         end
                     end
                 end
             end
 
             %% 去除目标信号数据包中包含其它冲突信号的 preamble 的 bin 值 (因为冲突的 preamble 是 8 个连续的一样的 bin 值，在目标信号的数据包中产生的干扰显著，表现为占满整个解调窗口的错误 Bin，影响目标 chirp 的解调)
-            pkt_Num = length(obj.detectedPktAll);
-            obj.binRm = cell(1, pkt_Num);   % 创建一个cell数组
+            numRows = size(obj.detectedPktAll, 1);
+            obj.binRm = cell(1, numRows);   % 创建一个cell数组
             preamble_len = obj.loraSet.Preamble_length;
-            for i = 1 : pkt_Num
+            for i = 1:numRows
                 rowofBinRm = cell(1, obj.loraSet.payloadNum);  % 存放每一行中需要 remove 的 preamble bin
-                for j = 1 : pkt_Num
+                targetPktStartPos = round(obj.detectedPktAll{i, 5} + 2.25);
+                cfoTmp = obj.detectedPktAll{i, 6};          % 目标信号的 cfo
+                winOffsetTmp = obj.detectedPktAll{i, 7};    % 目标信号的 winOffset
+                for j = 1:numRows
                     if i == j
                         continue;
                     end
-                    diff_val = round(obj.detectedPktAll{j}(5) - 10) - round(obj.detectedPktAll{i}(5) + 2.25);   % round(otherPreambleStartPos) - round(targetPktStartPos)
-                    if diff_val + 1 <= 23 && diff_val + preamble_len + 1 >= 1        % 如果目标信号数据包 和 冲突信号的 preamble 有重叠
-                        binTmp = obj.detectedPktAll{j}(2);       % 冲突信号的 preamble bin
-                        cfoTmp = obj.detectedPktAll{i}(6);       % 目标信号的 cfo
-                        winOffsetTmp = obj.detectedPktAll{i}(7); % 目标信号的 winOffset
-                        otherBin = mod(round(binTmp + cfoTmp / obj.loraSet.bw * obj.loraSet.fft_x + round(winOffsetTmp) / obj.loraSet.dine * obj.loraSet.fft_x + 0.25 * obj.loraSet.fft_x), obj.loraSet.fft_x); % 冲突信号在目标信号解码窗口的 preamble bin
-                        for k = 1 : obj.loraSet.payloadNum
-                            if k >= max(diff_val + 1, 1) && k <= min(diff_val + 1 + 8, 23)
-                                rowofBinRm{k} = [rowofBinRm{k} otherBin];
-                            end
-                        end
-                    end
+                    otherPreambleStartPos = round(obj.detectedPktAll{j, 5} - 10);
+                    diff_val = otherPreambleStartPos - targetPktStartPos;
+                    overlapStartPos = max(diff_val + 1, 1);                % 重叠的开始位置
+                    overlapEndPos = min(diff_val + preamble_len + 1, 23);  % 重叠的结束位置
+                    overlapIndices = overlapStartPos:overlapEndPos;        % 重叠的位置
+                    binTmp = obj.detectedPktAll{j, 2};                     % 冲突信号的 preamble bin
+                    otherBin = mod(round(binTmp + cfoTmp / obj.loraSet.bw * obj.loraSet.fft_x ...
+                             + round(winOffsetTmp) / obj.loraSet.dine * obj.loraSet.fft_x ...
+                             + 0.25 * obj.loraSet.fft_x), obj.loraSet.fft_x); % 冲突信号在目标信号解码窗口的 preamble bin
+                    rowofBinRm(overlapIndices) = cellfun(@(x) [x otherBin], rowofBinRm(overlapIndices), 'UniformOutput', false);
                 end
                 obj.binRm{i} = rowofBinRm;
             end
 
             %% 根据上面检测到的信道和冲突数据包信息，进行解码
-            pkt_Num = length(obj.detectedPktAll);
-            for pkt_i = 1 : pkt_Num
+            for pkt_i = 1 : numRows
                 obj = obj.clear();
-                Ch_i = obj.detectedPktAll{pkt_i}(1);
-                obj.preamblePeak = obj.detectedPktAll{pkt_i}(4);
-                obj.SFDPos = obj.detectedPktAll{pkt_i}(5);
-                obj.cfo = obj.detectedPktAll{pkt_i}(6);
-                obj.winOffset = obj.detectedPktAll{pkt_i}(7);
-                obj.preambleSignal = circshift(signals, -round(obj.winOffset));
+                Ch_i = obj.detectedPktAll{pkt_i, 1};                 % 信道
+                obj.preamblePeak = obj.detectedPktAll{pkt_i, 4};     % preamble 峰值
+                obj.SFDPos = obj.detectedPktAll{pkt_i, 5};           % SFD 位置
+                obj.cfo = obj.detectedPktAll{pkt_i, 6};              % cfo
+                obj.winOffset = obj.detectedPktAll{pkt_i, 7};        % winOffset
+                obj.preambleSignal = obj.detectedPktAll{pkt_i, 8};   % 修正 winOffset 后的信号
                 obj = obj.rebuildIdealchirpCfo(0);  % 根据 cfo 重新生成带有 decfo 的 idealchirp，用于解调
 
                 obj = obj.OverlapChDecoder(Ch_i, pkt_i);
                 obj.payloadBin{end + 1} = obj.BinRecord;
-                obj.BinRecord = {};
             end
         end
 
@@ -171,14 +171,16 @@ classdef VarCutChirpDecoder < LoraDecoder
         % 结果: obj.payloadBin
         %% ✔
         function obj = OverlapChDecoder(obj, ChNum, pkt_i)
-            dine = obj.loraSet.dine;
+            dineTmp = obj.loraSet.dine;
             preambleSignalTemp = obj.preambleSignal;
             binRmTmp = obj.binRm{pkt_i};  % 需要去除的冲突信号的 preamble bin
 
-            signal = preambleSignalTemp((obj.SFDPos + 2.25) * dine + 1 : end);  % 仅包含数据包部分的目标信号
+            signal = preambleSignalTemp((obj.SFDPos + 2.25) * dineTmp + 1 : end);  % 仅包含数据包部分的目标信号
 
             for window_i = 1 : obj.loraSet.payloadNum
-                windowChirp = signal((window_i - 1) * dine + 1 : window_i * dine);  % symbol
+                windowChirp = signal((window_i - 1) * dineTmp + 1 : window_i * dineTmp);  % symbol
+
+                windowChirp = obj.filterOutOtherCH(windowChirp, 150, 0, obj.loraSet.bw / 2);    % 只保留目标信号所在的信道（针对重叠信道问题）
                 %% 对齐窗口能量方差
                 obj = obj.decodeVarofPower(windowChirp, 1/16, 16, binRmTmp{window_i});    % 信号, 切分窗口大小, 步长, 错误 Bin
 
@@ -202,12 +204,12 @@ classdef VarCutChirpDecoder < LoraDecoder
             end
             % disp(['Candicate Bins: [', num2str(signalPeakInfo(2,:)), ']']);
 
-            LenofPeak = length(signalPeakInfo(1, : ));
-            if LenofPeak == 0
+            numPeaks = size(signalPeakInfo, 2);
+            if numPeaks == 0
                 obj.BinRecord = [obj.BinRecord NaN];
                 return;
-            elseif LenofPeak == 1  % 如果只有一个峰值, 则直接返回
-                obj.BinRecord = [obj.BinRecord signalPeakInfo(2, LenofPeak)];
+            elseif numPeaks == 1    % 如果只有一个峰值, 则直接返回
+                obj.BinRecord = [obj.BinRecord signalPeakInfo(2, numPeaks)];
                 return;
             end
 
@@ -217,23 +219,25 @@ classdef VarCutChirpDecoder < LoraDecoder
                 S_t = obj.downchirpSW(winSize, i * step) .* chirp;
                 dechirp_fft = abs(fft(S_t, dineTmp));      % fft()函数的结果是个复数, 取绝对值表示幅值
                 dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
-                ResInfo{i + 1} = [dechirp_fft; 1 : fft_xTmp];     % 记录每个滑动窗口解码结果（{peak, bin}, {peak, bin}, ...}）
+                ResInfo{i + 1} = [dechirp_fft; 1 : fft_xTmp];     % 记录每个滑动窗口解码结果（{peak, bin}, {peak, bin}, ...}）, size is 'fft_xTmp'
             end
 
-            varianceSet = zeros(1, LenofPeak);
-            for j = 1 : LenofPeak
-                peakInfo = zeros(1, WinNum + 1);     % length(ResInfo) = WinNum + 1
-                for i = 1 : WinNum + 1
-                    peakInfo(i) = ResInfo{i}(1, signalPeakInfo(2, j));
-                end
+            varianceSet = zeros(1, numPeaks);
+            % for j = 1 : numPeaks
+            %     peakInfo = zeros(1, WinNum + 1);     % length(ResInfo) = WinNum + 1
+            %     for i = 1 : WinNum + 1
+            %         peakInfo(i) = ResInfo{i}(1, signalPeakInfo(2, j));
+            %     end
+            %     varianceSet(j) = var(peakInfo);
+            % end
+            for j = 1 : numPeaks
+                peakInfo = cellfun(@(x) x(1, signalPeakInfo(2, j)), ResInfo);
                 varianceSet(j) = var(peakInfo);
             end
-            BinWithVariance = [varianceSet; signalPeakInfo(2, : )];  % [variance; bin]
-            % obj.cfo/obj.loraSet.bw * fft_xTmp + round(obj.winOffset) / dineTmp * fft_xTmp + 0.25 * dineTmp * fft_xTmp
+            BinWithVariance = [varianceSet; signalPeakInfo(2, :)];  % [variance; bin]
 
             [~, index] = min(BinWithVariance(1, : ));
             obj.BinRecord = [obj.BinRecord BinWithVariance(2, index)];
-            % disp(['BinRecord: ', num2str(obj.BinRecord)]);
         end
 
         %% 方法: 生成指定频率偏移的 downchirp
@@ -369,17 +373,15 @@ classdef VarCutChirpDecoder < LoraDecoder
             T = -0.5 * obj.loraSet.bw * Ns;
             d_dt = 1 / obj.loraSet.sample_rate;       % 采样点间间隔的时间
             f0 = obj.loraSet.bw / 2 + obj.cfo;
+            dineTmp = obj.loraSet.dine;
 
-            r_t = offset / obj.loraSet.fft_x;  % e.g. 1/8 (128/1024)
-            seg_1 = d_dt * (0 : 1 : floor(r_t * obj.loraSet.dine)- 1);   % floor(x): x 向下取整
-            seg_2 = d_dt * (floor(r_t * obj.loraSet.dine) : 1 : floor((r_t + winSize) * obj.loraSet.dine)- 1);
-            seg_3 = d_dt * (floor((r_t + winSize) * obj.loraSet.dine) : 1 : obj.loraSet.dine- 1);
-            % seg_1 = d_dt * (0 : 1 : r_t * (obj.loraSet.dine- 1));
-            % seg_2 = d_dt * (r_t * (obj.loraSet.dine- 1) : 1 : (r_t + winSize) * (obj.loraSet.dine- 1));
-            % seg_3 = d_dt * ((r_t + winSize) * (obj.loraSet.dine- 1) : 1 : obj.loraSet.dine- 1);
-            Downchirp_1 =  noneArr(seg_1);
+            r_t = offset / obj.loraSet.fft_x;
+            seg_1 = d_dt * (0 : r_t * (dineTmp - 1));
+            seg_2 = d_dt * (r_t * (dineTmp - 1) : (r_t + winSize) * (dineTmp - 1));
+            seg_3 = d_dt * ((r_t + winSize) * (dineTmp- 1) : dineTmp - 1);
+            Downchirp_1 = noneArr(seg_1);
             Downchirp_2 = cmx * (cos(pre_dir .* seg_2 .* (f0 + T * seg_2)) + sin(pre_dir .* seg_2 .* (f0 + T * seg_2)) * 1i);
-            Downchirp_3 =  noneArr(seg_3);
+            Downchirp_3 = noneArr(seg_3);
             downchirpSW = [Downchirp_1, Downchirp_2, Downchirp_3];
         end
 
@@ -391,15 +393,15 @@ classdef VarCutChirpDecoder < LoraDecoder
         function [obj, preambleBinTmp] = detect(obj, chirp)
             preambleBinTmp = [];
             % preambleBinTmp 用于存放检测出来的lora包的preamble bin
-            dine = obj.loraSet.dine;
+            dineTmp = obj.loraSet.dine;
             fft_x = obj.loraSet.fft_x;
 
             if isActive(obj, chirp)  % 如果这个信道存在信号
                 % 对这个信道的信号乘以downchirp，做FFT，通过findpeaks函数找到突出峰值对应的bin，来判断preamble特性
                 chirpTmp = chirp;
                 dechirp = chirpTmp .* obj.idealDownchirp;
-                dechirp_fft = abs(fft(dechirp, dine));
-                dechirp_fft = dechirp_fft(1 : fft_x) + dechirp_fft(dine - fft_x + 1 : dine);
+                dechirp_fft = abs(fft(dechirp, dineTmp));
+                dechirp_fft = dechirp_fft(1 : fft_x) + dechirp_fft(dineTmp - fft_x + 1 : dineTmp);
                 % 找出若干个峰值
                 result = obj.findpeaksWithShift(dechirp_fft, fft_x);
                 % deWinpeakposInfo = obj.powerExtraction(result, 1);  % 滤掉低于能量阈值的峰值
@@ -456,12 +458,11 @@ classdef VarCutChirpDecoder < LoraDecoder
                 % 将检测队列中 count 数目等于 countThreshold 的元素放入检测成功的队列中
                 detectArrayNumTmp = obj.detectArrayNum;
                 countTmp = 1;
-                countThreshold = 5;
+                countThreshold = 5;   % 阈值(即认为出现了 5 次以上的峰值才认为是有效的 preamble bin)
                 for pos_i = 1:detectArrayNumTmp
-%                     if obj.detectArrayCount(channel, countTmp) == 7
                     if obj.detectArrayCount(countTmp) == countThreshold
                         % 将挑选出的lora包的preamble bin记录
-                        preambleBinTmp = [preambleBinTmp, obj.detectArray(countTmp)];
+                        preambleBinTmp = [preambleBinTmp obj.detectArray(countTmp)];
                         % 将detect队列中对应元素删除，和上面做法相同
                         obj.detectArray(countTmp:end) = [obj.detectArray(countTmp+1:end), 0];
                         obj.detectArrayCount(countTmp:end) = [obj.detectArrayCount(countTmp+1:end), 0];
@@ -482,8 +483,8 @@ classdef VarCutChirpDecoder < LoraDecoder
         % 结果: obj.preambleEndPos
         %% √
         function obj  = detectPreambleEndPosBehind(obj)
-            dine = obj.loraSet.dine;
-            fft_x = obj.loraSet.fft_x;
+            dineTmp = obj.loraSet.dine;
+            fft_xTmp = obj.loraSet.fft_x;
             preamble_len = obj.loraSet.Preamble_length;
             windowTmp = obj.window;
             preambleSignalTmp = obj.preambleSignal;
@@ -496,12 +497,12 @@ classdef VarCutChirpDecoder < LoraDecoder
             % 搜寻第 7 个 preamble 前后的 chirp
             for t = windowTmp : windowTmp + 7
                 % 每一个窗口做FFT后，将获得的结果找出若干个峰值
-                signal_tmp = preambleSignalTmp(t * dine + 1 : (t + 1) * dine);
+                signal_tmp = preambleSignalTmp(t * dineTmp + 1 : (t + 1) * dineTmp);
                 dechirp = signal_tmp .* obj.idealDownchirp;
-                dechirp_fft = abs(fft(dechirp, dine));
-                dechirp_fft = dechirp_fft(1 : fft_x) + dechirp_fft(dine - fft_x + 1 : dine);
+                dechirp_fft = abs(fft(dechirp, dineTmp));
+                dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
                 % 找出若干个峰值
-                result = obj.findpeaksWithShift(dechirp_fft, fft_x);
+                result = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);
                 % 记录峰值
                 candidate{t - windowTmp + 1} = result(2, :);
                 cancidateAmp{t - windowTmp + 1} = result(1, :);
@@ -522,12 +523,12 @@ classdef VarCutChirpDecoder < LoraDecoder
             else
                 obj.preambleEndPos = windowTmp + Preamble_end_pos - 2;
                 % 获取 preamble 的能量
-                signal_tmp = preambleSignalTmp((obj.preambleEndPos-1)*dine+1 : (obj.preambleEndPos)*dine);
+                signal_tmp = preambleSignalTmp((obj.preambleEndPos-1) * dineTmp + 1 : (obj.preambleEndPos) * dineTmp);
                 dechirp = signal_tmp .* obj.idealDownchirp;
-                dechirp_fft = abs(fft(dechirp, dine));
-                dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+                dechirp_fft = abs(fft(dechirp, dineTmp));
+                dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
                 % 找出若干个峰值，峰值间间隔为 leakWidth
-                result = obj.findpeaksWithShift(dechirp_fft, fft_x);
+                result = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);
                 binPos = result(2, :);
                 % 记录峰值
                 [~, closest_idx] = min(abs(binPos - preambleBinTmp));
@@ -545,7 +546,7 @@ classdef VarCutChirpDecoder < LoraDecoder
         % -- ampResult: 每一个元胞数组中与输入的bin接近的所有值对应的能量
         %% √
         function [result, ampResult] = findClosetSyncWordBin(obj, cellArray, ampArray, bin)
-            fft_x = obj.loraSet.fft_x;
+            fft_xTmp = obj.loraSet.fft_x;
             % 找到每个元胞数组（每个元素都是一个数组）元素中，接近bin的所有值
             result = cell(1, length(cellArray));
             ampResult = cell(1, length(cellArray));
@@ -557,9 +558,9 @@ classdef VarCutChirpDecoder < LoraDecoder
                 for k = 1:3 % 每种条件都为+1，-1，0的情况
                     condition(i, k) = bin + tmp + k - 2;
                     if condition(i, k) <= 0
-                        condition(i, k) = condition(i, k) + fft_x;
-                    elseif condition(i, k) > fft_x
-                        condition(i, k) = condition(i, k) - fft_x;
+                        condition(i, k) = condition(i, k) + fft_xTmp;
+                    elseif condition(i, k) > fft_xTmp
+                        condition(i, k) = condition(i, k) - fft_xTmp;
                     end
                 end
             end
@@ -602,7 +603,7 @@ classdef VarCutChirpDecoder < LoraDecoder
         % 结果: Preamble_end_pos
         %% √
         function Preamble_end_pos = findPosWithSyncWord(obj, BinArray, AmpArray)
-            fft_x = obj.loraSet.fft_x;
+            fft_xTmp = obj.loraSet.fft_x;
             Preamble_end_pos = 0;
             for loop1 = 3:length(BinArray)
                 thirdArray = BinArray{loop1};
@@ -619,7 +620,7 @@ classdef VarCutChirpDecoder < LoraDecoder
                     for value = 7:9
                         secondFindArr(1, value-6) = thirdBin - value;
                         if secondFindArr(1, value-6) <= 0
-                            secondFindArr(1, value-6) = secondFindArr(1, value-6) + fft_x;
+                            secondFindArr(1, value-6) = secondFindArr(1, value-6) + fft_xTmp;
                         end
                     end
                     for loop3 = 1:length(secondArray)
@@ -630,7 +631,7 @@ classdef VarCutChirpDecoder < LoraDecoder
                             for value = 7:9
                                 firstFindArr(1, value-6) = secondBin - value;
                                 if firstFindArr(1, value-6) <= 0
-                                    firstFindArr(1, value-6) = firstFindArr(1, value-6) + fft_x;
+                                    firstFindArr(1, value-6) = firstFindArr(1, value-6) + fft_xTmp;
                                 end
                             end
                             for loop4 = 1:length(firstArray)
@@ -664,8 +665,8 @@ classdef VarCutChirpDecoder < LoraDecoder
             zeropadding_size = obj.loraSet.factor;                   % 设置补零的数量，这里的 decim 表示，补上 decim-1 倍窗口的零，计算 FFT 时一共是 decim 倍的窗口（decim+1）, e.g. 16
             d_sf = obj.loraSet.sf;
             d_bw = obj.loraSet.bw;
-            dine = obj.loraSet.dine;
-            fft_x = obj.loraSet.fft_x;
+            dineTmp = obj.loraSet.dine;
+            fft_xTmp = obj.loraSet.fft_x;
             % Preamble_num = obj.loraSet.Preamble_length;
             downchirp = obj.idealDownchirp;
             upchirp = obj.idealUpchirp;
@@ -676,11 +677,11 @@ classdef VarCutChirpDecoder < LoraDecoder
             preambleEndPosTmp = obj.preambleEndPos;
             preambleBinTmp = obj.preambleBin;
 
-            dine_zeropadding = dine * zeropadding_size * 2 ^ (10 - d_sf);   % e.g. 16384 * 16 * 2 ^ (10 - 10) = 262144
-            fft_x_zeropadding = fft_x * zeropadding_size * 2 ^ (10 - d_sf);  % e.g. 1024 * 16 * 2 ^ (10 - 10) = 16384
+            dine_zeropadding = dineTmp * zeropadding_size * 2 ^ (10 - d_sf);   % e.g. 16384 * 16 * 2 ^ (10 - 10) = 262144
+            fft_x_zeropadding = fft_xTmp * zeropadding_size * 2 ^ (10 - d_sf);  % e.g. 1024 * 16 * 2 ^ (10 - 10) = 16384
 
             % 获取最后一个 preamble 窗口的若干个峰值，找到最接近preambleBin的峰
-            samples = preambleSignalTmp((preambleEndPosTmp - 1) * dine + 1 : (preambleEndPosTmp) * dine);  % 倒数第二个preamble
+            samples = preambleSignalTmp((preambleEndPosTmp - 1) * dineTmp + 1 : (preambleEndPosTmp) * dineTmp);  % 倒数第二个preamble
             samples_fft = abs(fft(samples .* downchirp, dine_zeropadding, 2));
             samples_fft_merge = samples_fft(1 : fft_x_zeropadding) + samples_fft(dine_zeropadding - fft_x_zeropadding + 1 : dine_zeropadding);
             % 找出若干个峰值，峰值间间隔为leakWidth
@@ -704,7 +705,7 @@ classdef VarCutChirpDecoder < LoraDecoder
 
             % 已知downchirp的位置，得到downchirp的bin（默认downchirp窗口内不存在downcrhip间的冲突）
             % TODO：可能需要考虑downcrhip发生冲突的问题
-            SFD_samples = preambleSignalTmp((preambleEndPosTmp + 3) * dine + 1 : (preambleEndPosTmp + 4) * dine);  % 第一个和第二个downchirp之间
+            SFD_samples = preambleSignalTmp((preambleEndPosTmp + 3) * dineTmp + 1 : (preambleEndPosTmp + 4) * dineTmp);  % 第一个和第二个downchirp之间
             SFD_samples_fft = abs(fft(SFD_samples .* upchirp, dine_zeropadding));
             samples_fft_merge = SFD_samples_fft(1 : fft_x_zeropadding) + SFD_samples_fft(dine_zeropadding - fft_x_zeropadding + 1 : dine_zeropadding);
             % 找出若干个峰值，峰值间间隔为leakWidth
@@ -748,13 +749,13 @@ classdef VarCutChirpDecoder < LoraDecoder
         % 结果: isActive：布尔值，代表是否存在信号
         %% √
         function [isActive] = isActive(obj, signals)
-            dine = obj.loraSet.dine;
-            fft_x = obj.loraSet.fft_x;
+            dineTmp = obj.loraSet.dine;
+            fft_xTmp = obj.loraSet.fft_x;
             isActive = false;
             % 通过FFT的峰值判断是否存在信号
             dechirp = signals .* obj.idealDownchirp;
-            dechirp_fft = abs(fft(dechirp, dine));
-            dechirp_fft = dechirp_fft(1:fft_x) + dechirp_fft(dine-fft_x+1:dine);
+            dechirp_fft = abs(fft(dechirp, dineTmp));
+            dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
             % 找到最大值
             [amp, ~] = max(dechirp_fft);
             % 最大值超过窗口均值的十倍
@@ -807,7 +808,7 @@ classdef VarCutChirpDecoder < LoraDecoder
         %% √
         function obj = getSFDPos(obj)
             fft_xTmp = obj.loraSet.fft_x;
-            dine = obj.loraSet.dine;
+            dineTmp = obj.loraSet.dine;
             % leakWidth = obj.loraSet.leakage_width1;
             % preambleBin = obj.preambleBin;
             preambleEndPosTmp = obj.preambleEndPos;
@@ -825,10 +826,10 @@ classdef VarCutChirpDecoder < LoraDecoder
 
             % 同样思路，找到这几个窗口内的前20峰值，然后找到与 bin1 最接近的峰，判断其规律是否与 sync word 相同
             for windows = 1 : 5
-                signal = preambleSignalTmp((windows - 1 + preambleEndPosTmp - 2) * dine + 1 : (windows + preambleEndPosTmp - 2) * dine);
+                signal = preambleSignalTmp((windows - 1 + preambleEndPosTmp - 2) * dineTmp + 1 : (windows + preambleEndPosTmp - 2) * dineTmp);
                 dechirp = signal .* obj.cfoDownchirp;
-                dechirp_fft = abs(fft(dechirp, dine));
-                dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dine - fft_xTmp + 1 : dine);
+                dechirp_fft = abs(fft(dechirp, dineTmp));
+                dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
                 result = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);
 
                 % 记录峰值
@@ -854,10 +855,10 @@ classdef VarCutChirpDecoder < LoraDecoder
                 peak = zeros(1, 2);
                 obj.SFDPeakAmp = zeros(1, 2);
                 for t = 0 : 1
-                    signal = preambleSignalTmp((obj.SFDPos + t) * dine + 1 : (obj.SFDPos + t + 1 ) * dine);
+                    signal = preambleSignalTmp((obj.SFDPos + t) * dineTmp + 1 : (obj.SFDPos + t + 1 ) * dineTmp);
                     dechirp = signal .* obj.cfoUpchirp;
-                    dechirp_fft = abs(fft(dechirp, dine));
-                    dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dine - fft_xTmp + 1 : dine);
+                    dechirp_fft = abs(fft(dechirp, dineTmp));
+                    dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
                     % 冲突情况下，需要找到downchirp bin为1的峰的峰值
                     result = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);
                     binPos = result(2, :);

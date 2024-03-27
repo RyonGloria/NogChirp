@@ -26,41 +26,51 @@ CICDecoder = CICDecoder(loraSet);
 % fileDir = '\\192.168.3.102\e\data\ChNum_3_l1m2h3\';
 % fileDir = '\\192.168.3.102\e\data\ChNum_3_l2m3h1\';
 % fileDir = 'd:\data\ChNum_2_m2h3\';
-fileDir = '\\192.168.3.102\e\share\samples\'; 
+% fileDir = 'd:\data\Collision-2_CH-2\';
+fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3_22\';
 % fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 true_bin = importdata(strcat('.\Config\bin\NogSF', string(sf), '.txt'))';
 
-true_bin_Num = 0;
-binSum = 0;
-
 % 从文件中读取信号流
-for file_i = 1 : numel(fileDir)
+bar = waitbar(0, 'Loading...');    % waitbar 显示进度条
+
+fileNumber = numel(fileIn);
+fileBinTrueRate = zeros(1, fileNumber);
+for file_i = 1 : fileNumber
     [signal] = readSignalFile(fileDir, fileIn(file_i));
-    disp("file " + file_i);
     emptySignal = zeros(1, 10000); % create an array of zeros with the specified length
     paddedSignal = [emptySignal signal]; % concatenate the empty signal with the original signal
-    CICDecoder = CICDecoder.decode(paddedSignal);
-    for i = 1:numel(CICDecoder.binRecord)
-        % 使用 cellfun 将当前行的每个元素格式化为字符串，并连接起来
-        row_str = cellfun(@(x) sprintf('%s', mat2str(x)), CICDecoder.binRecord(i), 'UniformOutput', false);
-        % 使用 strjoin 将格式化后的字符串连接起来，并输出
-        row_str = replace(row_str, '[', '');
-        row_str = replace(row_str, ']', '');
-        % 计算准确率
-        true_bin_Num = true_bin_Num + sum(str2num(row_str{1}) == true_bin);
-        binSum = binSum + numel(true_bin);
-    end
-end
-accuracy = true_bin_Num / binSum * 100;
-disp("正确解出的 Bin 值: " + num2str(true_bin_Num));
-disp("Bin 值总数: " + num2str(binSum));
-disp(['准确率: ', num2str(accuracy), '%']);
 
-% 正确解出的 Bin 值: 982
-% Bin 值总数: 1081
-% 准确率: 90.8418%
-% 历时 380.724864 秒。
+    try
+        CICDecoder = CICDecoder.decode(paddedSignal);
+    catch
+        disp("文件: " + num2str(file_i) + " 出现错误");
+    end
+    % 计算该文件的正确率
+    pktNum = length(CICDecoder.binRecord);
+    if pktNum
+        % 计算该文件的正确率
+        recordRateTmp = zeros(1, pktNum);
+        for binResultIndex = 1 : pktNum
+            recordRateTmp(binResultIndex) = calculateAccuracy(true_bin, CICDecoder.binRecord{binResultIndex});
+        end
+        recordRateTmp = sort(recordRateTmp, 'descend');
+        fileBinTrueRate(file_i) = mean(recordRateTmp);
+        disp(['文件 ', num2str(file_i) , ' 检测到 ', num2str(pktNum), ' 个信号', ' •准确率: ', num2str(fileBinTrueRate(file_i) * 100), '%']);
+    else
+        disp(['文件 ', num2str(file_i) , ' 未检测到信号']);
+    end
+    waitbarStr = ['目前进度 ', num2str(100 * file_i / fileNumber), '%, 已完成 ', num2str(file_i), '/', num2str(fileNumber)];   % 显示的文本
+    waitbar(file_i / fileNumber, bar, waitbarStr);
+end
+close(bar);
+
+fileBinTrueRate = fileBinTrueRate(fileBinTrueRate ~= 0);
+disp(['综合准确率: ', num2str(mean(fileBinTrueRate)*100), '%']);
+% 综合准确率: 90.7971%
+% 历时 260.721951 秒。
+
 
 % emptySignal = zeros(1, 10000); % create an array of zeros with the specified length
 % paddedSignal = [emptySignal signal]; % concatenate the empty signal with the original signal
@@ -85,6 +95,15 @@ disp(['准确率: ', num2str(accuracy), '%']);
 %     disp(['准确率：', num2str(accuracy), '%']);
 % end
 
+% accuracy = true_bin_Num / binSum * 100;
+% disp("正确解出的 Bin 值: " + num2str(true_bin_Num));
+% disp("Bin 值总数: " + num2str(binSum));
+% disp(['准确率: ', num2str(accuracy), '%']);
+
+% 正确解出的 Bin 值: 735
+% Bin 值总数: 805
+% 准确率: 91.3043%
+% 历时 196.450467 秒。
 
 % ⭐Bin Cell -1-
 % [810 1010 386 614 850 406 126 1022 367 677 347 284 27 551 *985 *364 49 827 *384 85 265 587 421]

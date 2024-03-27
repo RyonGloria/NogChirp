@@ -16,7 +16,7 @@ classdef NogChirpDecoder < LoraDecoder
         preamblePeak;
         upchirpbin;
         downchirpbin;
-        channelFlag;
+        channelNum;
         fftBinDeWinRecord;     % 记录整个解码窗口的峰值位置
         detectArray;           % 存放检测到的 bin
         detectArrayCount;      % 计数器
@@ -83,9 +83,9 @@ classdef NogChirpDecoder < LoraDecoder
             obj = obj.clear();
             obj.payloadBin = {};
             obj.ResultInfo = {};
-            % obj.channelFlag = true;
+            % obj.channelNum = true;
 
-            for Ch_i = 1 : 2
+            for Ch_i = 1 : 1
                 disp("Channel -" + num2str(Ch_i) + "-");
                 if Ch_i == 2
                     signals = obj.rechangeSignalFreq(signals, - obj.loraSet.bw / 4);  % 中心频率对齐第二信道
@@ -630,7 +630,7 @@ classdef NogChirpDecoder < LoraDecoder
             % obj.cfo/obj.loraSet.bw * fft_xTmp + round(obj.winOffset) / dineTmp * fft_xTmp + 0.25 * dineTmp * fft_xTmp
 
             [~, index] = min(BinWithVariance(1, : ));
-            obj.BinRecord = [obj.BinRecord BinWithVariance(2, index)];
+            obj.BinRecord = [obj.BinRecord BinWithVariance(2, index)];  % BinWithVariance(2, :)
             % disp(['BinRecord: ', num2str(obj.BinRecord)]);
         end
 
