@@ -180,7 +180,7 @@ classdef VarCutChirpDecoder < LoraDecoder
             for window_i = 1 : obj.loraSet.payloadNum
                 windowChirp = signal((window_i - 1) * dineTmp + 1 : window_i * dineTmp);  % symbol
 
-                windowChirp = obj.filterOutOtherCH(windowChirp, 150, 0, obj.loraSet.bw / 2);    % 只保留目标信号所在的信道（针对重叠信道问题）
+                windowChirp = obj.filterOutOtherCH(windowChirp, 50, 0, obj.loraSet.bw / 2);    % 只保留目标信号所在的信道（针对重叠信道问题）
                 %% 对齐窗口能量方差
                 obj = obj.decodeVarofPower(windowChirp, 1/16, 16, binRmTmp{window_i});    % 信号, 切分窗口大小, 步长, 错误 Bin
 
@@ -196,10 +196,13 @@ classdef VarCutChirpDecoder < LoraDecoder
             fft_xTmp = obj.loraSet.fft_x;
             dineTmp  = obj.loraSet.dine;
 
-            dechirp_fft = obj.decodeChirp(chirp);
+            StWholeWin = obj.cfoDownchirp .* chirp;
+            dechirp_fft = abs(fft(StWholeWin, dineTmp)); % fft()函数的结果是个复数, 取绝对值表示幅值
+            dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
             signalPeakInfo = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);   % 找峰值
             signalPeakInfo = obj.powerExtraction(signalPeakInfo, 1);          % 滤掉低于能量阈值（preamble 1/2能量）的峰值
             for i = 1 : length(binRmTmp)
+                disp(binRmTmp(i));
                 signalPeakInfo(:, signalPeakInfo(2, :) == binRmTmp(i)) = [];  % 去除其它包的 preamble 值
             end
             % disp(['Candicate Bins: [', num2str(signalPeakInfo(2,:)), ']']);
@@ -216,10 +219,15 @@ classdef VarCutChirpDecoder < LoraDecoder
             WinNum = (fft_xTmp - (fft_xTmp * winSize)) / step;
             ResInfo = cell(1, WinNum);
             for i = 0 : 1: WinNum
-                S_t = obj.downchirpSW(winSize, i * step) .* chirp;
-                dechirp_fft = abs(fft(S_t, dineTmp));      % fft()函数的结果是个复数, 取绝对值表示幅值
+                StPartWin = StWholeWin;
+                chirpStart = (i * step / obj.loraSet.fft_x) * obj.loraSet.dine + 1;  % 确定 chirp 切片的起始位置
+                chirpEnd = chirpStart - 1 + winSize * obj.loraSet.dine;  % 确定 chirp 切片的结束位置
+                StPartWin(1 : chirpStart - 1) = 0;               % 将 chirp 切片之前的位置置零
+                StPartWin(chirpEnd : obj.loraSet.dine) = 0;      % 将 chirp 切片之后的位置置零
+
+                dechirp_fft = abs(fft(StPartWin, dineTmp));      % fft()函数的结果是个复数, 取绝对值表示幅值
                 dechirp_fft = dechirp_fft(1 : fft_xTmp) + dechirp_fft(dineTmp - fft_xTmp + 1 : dineTmp);
-                ResInfo{i + 1} = [dechirp_fft; 1 : fft_xTmp];     % 记录每个滑动窗口解码结果（{peak, bin}, {peak, bin}, ...}）, size is 'fft_xTmp'
+                ResInfo{i + 1} = [dechirp_fft; 1 : fft_xTmp];     % 记录每个滑动窗口解码结果（{peak, bin}, {peak, bin}, ...}）
             end
 
             varianceSet = zeros(1, numPeaks);

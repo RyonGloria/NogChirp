@@ -5,7 +5,7 @@ tic;            % 打开计时器
 
 % 基本参数设置
 sf = 10;
-bw = 125e3;
+bw = 250e3;
 samplesRate = 2e6;
 debugPath = "terminal";
 DebugLevel = 4;
@@ -20,14 +20,14 @@ loraSet.payloadNum = 23;  % payload数目
 % fileDir = 'd:\data\ChNum_2_m2h3\';
 % fileDir = '\\192.168.3.102\e\share\samples\';
 % fileDir = 'd:\data\Collision-2_CH-2\';
-fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3_22\';
+fileDir = 'd:\data\1_17indoor\FFT_jun\';
+% fileDir = 'd:\data\ChNum_2_m2h3_22\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 
-true_bin = importdata(strcat('.\Config\bin\NogSF', string(sf), '.txt'))';
+% true_bin = importdata(strcat('.\Config\bin\NogSF', string(sf), '.txt'))';
 
 
 % 从文件中读取信号流
-bar = waitbar(0, 'Loading...');    % waitbar显示进度条
 fileNum = numel(fileIn);
 fileBinTrueRate = zeros(1, fileNum);
 for file_i = 1 : fileNum
@@ -36,29 +36,35 @@ for file_i = 1 : fileNum
     try
         obj = obj.decode(signal);
     catch
-        disp("文件 " + num2str(file_i) + " 出现错误");
+        disp(['文件 ' , num2str(file_i), '/', num2str(fileNum), ' 出现错误']);
         continue;
     end
 
     pktNum = length(obj.payloadBin);
     if pktNum
-        % 计算该文件的正确率
-        recordRateTmp = zeros(1, pktNum);
-        for binResultIndex = 1 : pktNum
-            recordRateTmp(binResultIndex) = calculateAccuracy(true_bin, cell2mat(obj.payloadBin{binResultIndex}));
+        for i = 1:numel(obj.payloadBin)
+        row_str = cellfun(@(x) sprintf('%s', mat2str(x)), obj.payloadBin{i}, 'UniformOutput', false);
+        disp(strjoin(row_str, ' '));
         end
-        recordRateTmp = sort(recordRateTmp, 'descend');
-        fileBinTrueRate(file_i) = mean(recordRateTmp);
-        disp(['文件 ', num2str(file_i) , ' 检测到 ', num2str(pktNum), ' 个信号', ' •准确率: ', num2str(fileBinTrueRate(file_i) * 100), '%']);
     else
-        disp(['文件 ', num2str(file_i) , ' 未检测到信号']);
+        disp(['文件 ', num2str(file_i) , '/', num2str(fileNum), ' 未检测到信号']);
     end
-    waitbarStr = ['目前进度 ', num2str(100 * file_i / fileNum), '%, 已完成 ', num2str(file_i), '/', num2str(fileNum)];   % 显示的文本
-    waitbar(file_i / fileNum, bar, waitbarStr);
+    % if pktNum
+    %     % 计算该文件的正确率
+    %     recordRateTmp = zeros(1, pktNum);
+    %     for binResultIndex = 1 : pktNum
+    %         recordRateTmp(binResultIndex) = calculateAccuracy(true_bin, cell2mat(obj.payloadBin{binResultIndex}));
+    %     end
+    %     recordRateTmp = sort(recordRateTmp, 'descend');
+    %     fileBinTrueRate(file_i) = mean(recordRateTmp);
+    %     disp(['文件 ', num2str(file_i) , '/', num2str(fileNum), ' 检测到 ', num2str(pktNum), ' 个信号', ' (准确率: ', num2str(fileBinTrueRate(file_i) * 100), '%)']);
+    % else
+    %     disp(['文件 ', num2str(file_i) , '/', num2str(fileNum), ' 未检测到信号']);
+    % end
 end
-close(bar);
-fileBinTrueRate = fileBinTrueRate(fileBinTrueRate ~= 0);
-disp(['综合准确率: ', num2str(mean(fileBinTrueRate)*100), '%']);
+
+% fileBinTrueRate = fileBinTrueRate(fileBinTrueRate ~= 0);
+% disp(['综合准确率: ', num2str(mean(fileBinTrueRate)*100), '%']);
 
 % 综合准确率: 97.0109%
 % 历时 19.772260 秒。

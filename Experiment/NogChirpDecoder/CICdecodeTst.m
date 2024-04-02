@@ -26,26 +26,26 @@ CICDecoder = CICDecoder(loraSet);
 % fileDir = '\\192.168.3.102\e\data\ChNum_3_l1m2h3\';
 % fileDir = '\\192.168.3.102\e\data\ChNum_3_l2m3h1\';
 % fileDir = 'd:\data\ChNum_2_m2h3\';
-% fileDir = 'd:\data\Collision-2_CH-2\';
-fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3_22\';
+fileDir = 'd:\data\Collision-2_CH-2\';
+% fileDir = 'd:\data\ChNum_2_m2h3_22\';
 % fileDir = 'd:\data\ChNum_2_m2h3\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
 true_bin = importdata(strcat('.\Config\bin\NogSF', string(sf), '.txt'))';
 
 % 从文件中读取信号流
-bar = waitbar(0, 'Loading...');    % waitbar 显示进度条
+% bar = waitbar(0, 'Loading...');    % waitbar 显示进度条
 
-fileNumber = numel(fileIn);
-fileBinTrueRate = zeros(1, fileNumber);
-for file_i = 1 : fileNumber
+fileNum = numel(fileIn);
+fileBinTrueRate = zeros(1, fileNum);
+for file_i =  1: fileNum
     [signal] = readSignalFile(fileDir, fileIn(file_i));
     emptySignal = zeros(1, 10000); % create an array of zeros with the specified length
     paddedSignal = [emptySignal signal]; % concatenate the empty signal with the original signal
-
     try
         CICDecoder = CICDecoder.decode(paddedSignal);
     catch
-        disp("文件: " + num2str(file_i) + " 出现错误");
+        disp(['文件 ' , num2str(file_i), '/', num2str(fileNum), ' 出现错误']);
+        continue;
     end
     % 计算该文件的正确率
     pktNum = length(CICDecoder.binRecord);
@@ -57,14 +57,14 @@ for file_i = 1 : fileNumber
         end
         recordRateTmp = sort(recordRateTmp, 'descend');
         fileBinTrueRate(file_i) = mean(recordRateTmp);
-        disp(['文件 ', num2str(file_i) , ' 检测到 ', num2str(pktNum), ' 个信号', ' •准确率: ', num2str(fileBinTrueRate(file_i) * 100), '%']);
+        disp(['文件 ', num2str(file_i) , '/', num2str(fileNum), ' 检测到 ', num2str(pktNum), ' 个信号', ' (准确率: ', num2str(fileBinTrueRate(file_i) * 100), '%)']);
     else
-        disp(['文件 ', num2str(file_i) , ' 未检测到信号']);
+        disp(['文件 ', num2str(file_i) , '/', num2str(fileNum), ' 未检测到信号']);
     end
-    waitbarStr = ['目前进度 ', num2str(100 * file_i / fileNumber), '%, 已完成 ', num2str(file_i), '/', num2str(fileNumber)];   % 显示的文本
-    waitbar(file_i / fileNumber, bar, waitbarStr);
+    % waitbarStr = ['目前进度 ', num2str(100 * file_i / fileNum), '%, 已完成 ', num2str(file_i), '/', num2str(fileNum)];   % 显示的文本
+    % waitbar(file_i / fileNum, bar, waitbarStr);
 end
-close(bar);
+% close(bar);
 
 fileBinTrueRate = fileBinTrueRate(fileBinTrueRate ~= 0);
 disp(['综合准确率: ', num2str(mean(fileBinTrueRate)*100), '%']);
