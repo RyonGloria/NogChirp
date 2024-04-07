@@ -605,7 +605,7 @@ classdef NogChirpDecoder < LoraDecoder
                 obj.BinRecord = [obj.BinRecord NaN];
                 return;
             elseif LenofPeak == 1  % 如果只有一个峰值, 则直接返回
-                obj.BinRecord = [obj.BinRecord signalPeakInfo(2, LenofPeak)];
+                obj.BinRecord = [obj.BinRecord signalPeakInfo(2, LenofPeak) - 1];  % Bin 值减去1 指：(1 ~ 1024) --> (0 ~ 1023)
                 return;
             end
 
@@ -630,7 +630,7 @@ classdef NogChirpDecoder < LoraDecoder
             % obj.cfo/obj.loraSet.bw * fft_xTmp + round(obj.winOffset) / dineTmp * fft_xTmp + 0.25 * dineTmp * fft_xTmp
 
             [~, index] = min(BinWithVariance(1, : ));
-            obj.BinRecord = [obj.BinRecord BinWithVariance(2, index)];  % BinWithVariance(2, :)
+            obj.BinRecord = [obj.BinRecord BinWithVariance(2, index) - 1];  % Bin 值减去1 指：(1 ~ 1024) --> (0 ~ 1023)
             % disp(['BinRecord: ', num2str(obj.BinRecord)]);
         end
 

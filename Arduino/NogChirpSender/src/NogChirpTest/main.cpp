@@ -70,7 +70,7 @@ void setup() {
     // initialize SX1278 with default settings
     Serial.print(F("[SX1278] Initializing ... "));
     // @params frequency, bandwidth, spreading factor, coding rate, syncword, power, preamble length
-    int state = radio.begin(control_freq, bw, control_sf, cr, syncword, power, prelen);
+    int state = radio.begin(control_freq, bw, exp_sf, cr, syncword, power, prelen);
     // check if module started successfully
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println(F("success!"));
@@ -88,8 +88,8 @@ void setup() {
         while (true);
     }
 
-    // disable CRC
-    if (radio.setCRC(false, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
+    // enable CRC
+    if (radio.setCRC(true, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
         Serial.println(F("[SX1278] disable CRC, failed!"));
         while (true);
     } else {
@@ -145,7 +145,6 @@ void loop() {
     // if receive the control message, start sending experiment message
     if (Send_Flag)
     {
-        delay(50);
         // transmit packet
         int state = radio.transmit(data);
         if (state == RADIOLIB_ERR_NONE) {
@@ -156,7 +155,7 @@ void loop() {
         FastLED.show();
         delay(1000);
         FastLED.showColor(CRGB(0,0,0), 0);
-        delay(950);
+        delay(1000);
     }
 }
 
