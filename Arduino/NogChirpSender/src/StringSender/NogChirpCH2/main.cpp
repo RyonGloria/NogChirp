@@ -88,12 +88,12 @@ void setup() {
         while (true);
     }
 
-    // disable CRC
-    if (radio.setCRC(false, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
-        Serial.println(F("[SX1278] disable CRC, failed!"));
+    // enable CRC
+    if (radio.setCRC(true, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
+        Serial.println(F("[SX1278] enable CRC, failed!"));
         while (true);
     } else {
-        Serial.println(F("[SX1278] disable CRC, success!"));
+        Serial.println(F("[SX1278] enable CRC, success!"));
     }
 
 

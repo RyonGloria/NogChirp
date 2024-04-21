@@ -43,7 +43,7 @@ float esti_symbol = 30;   // estimated symbol number
 int delay_max = esti_symbol * symbol_time;
 boolean Send_Flag = false; // Send Flag
 String data = "helloworldloraexp";  // Bin value: [810, 1010, 386, 614, 850, 406, 126, 1022, 367, 677, 347, 284, 27, 551, 991, 990, 49, 827, 822, 85, 265, 587, 421]
-
+// String data = "hellM7)0ldloraexp";
 void setup() {
     // initialize serial port
     Serial.begin(115200);
@@ -90,59 +90,17 @@ void setup() {
 
     // enable CRC
     if (radio.setCRC(true, false) == RADIOLIB_ERR_INVALID_CRC_CONFIGURATION) {
-        Serial.println(F("[SX1278] disable CRC, failed!"));
+        Serial.println(F("[SX1278] enable CRC, failed!"));
         while (true);
     } else {
-        Serial.println(F("[SX1278] disable CRC, success!"));
+        Serial.println(F("[SX1278] enable CRC, success!"));
     }
 
 
 }
 
 void loop() {
-    // wait for incoming control message
-    String str;
-    if (radio.receive(str) == RADIOLIB_ERR_NONE) {
-        // print the data of the packet
-        Serial.print(F("[SX1278] Data:\t"));
-        Serial.println(str);
-
-        // judge if the control message is "Start"
-        if (str.indexOf("Start") != -1) {
-            Serial.println(F("[SX1278] get the Right command!"));
-
-            // set carrier frequency to exp_freq
-            if (radio.setFrequency(exp_freq) == RADIOLIB_ERR_INVALID_FREQUENCY) {
-                Serial.println(F("[SX1278] set to exp_freq, failed!"));
-                while (true);
-            } else {
-                Serial.println(F("[SX1278] set to exp_freq, success!"));
-            }
-
-            // set spreading factor to exp_sf
-            if (radio.setSpreadingFactor(exp_sf) == RADIOLIB_ERR_INVALID_SPREADING_FACTOR) {
-                Serial.println(F("[SX1278] set to exp_sf, failed!"));
-                while (true);
-            } else {
-                Serial.println(F("[SX1278] set to exp_sf, success!"));
-            }
-
-            // set implicit mode, use for sending experiment message
-            if (radio.implicitHeader(sizeof(data)) == RADIOLIB_ERR_NONE) {
-                Serial.println(F("[SX1278] 'transmit' set implicitHeader, success!"));
-            } else {
-                Serial.print(F("[SX1278] 'transmit' set implicitHeader, failed"));
-                while (true);
-            }
-
-            Send_Flag = true; // set Send_Flag to true
-
-        } else {
-            Serial.println(F("[SX1278] get the Wrong command!"));
-        }
-    }
-
-    // if receive the control message, start sending experiment message
+    // start sending experiment message
     if (Send_Flag)
     {
         // transmit packet
