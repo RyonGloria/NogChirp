@@ -5,12 +5,12 @@ tic;            % 打开计时器
 
 % 基本参数设置
 sf = 10;
-bw = 125e3;
+bw = 250e3;
 samplesRate = 2e6;
 
 %% 读取配置和验证文件
 [loraSet] = readLoraSet('GeneralConfig.json', sf, bw, samplesRate);
-loraSet.payloadNum = 24;  % payload数目
+loraSet.payloadNum = 23;  % payload数目
 %% Decoder
 obj = NogChirpDecoder(loraSet);
 
@@ -27,20 +27,11 @@ phy.is_debug = 0;           % enable debug mode
 % fileDir = 'd:\data\ChNum_2_m2h3\';
 % fileDir = '\\192.168.3.102\e\share\samples\';
 
-fileDir = 'D:\data\SameBinInterfer\';
+fileDir = 'd:\data\1_17indoor\FFT_jun\';
+% fileDir = 'd:\data\Collision-2_CH-2\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
-[signal1] = readSignalFile(fileDir, fileIn(2));  % 目标
-fileDir = 'D:\data\SameBinInterfer\';
-fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
-[signal2] = readSignalFile(fileDir, fileIn(1));  % 干扰
-signal1 = [signal1 zeros(1, 50000)];
-signal2 = [zeros(1, 50000) signal2];
-signal = signal1 + signal2;
-
-% fileDir = 'f:\samples\';
-% fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
-% % 从文件中读取信号流
-% [signal] = readSignalFile(fileDir, fileIn(1));
+% 从文件中读取信号流
+[signal] = readSignalFile(fileDir, fileIn(1));
 
 %% Decode Two Channel
 obj = obj.decodeTwoCH(signal);

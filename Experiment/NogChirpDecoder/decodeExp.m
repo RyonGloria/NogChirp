@@ -13,7 +13,7 @@ DebugUtil = DebugUtil(DebugLevel, debugPath);
 
 % 读取配置和验证文件`
 [loraSet] = readLoraSet('GeneralConfig.json', sf, bw, samplesRate);
-loraSet.payloadNum = 23;  % payload数目
+loraSet.payloadNum = 33;  % payload数目
 
 %% 读取文件夹下所有采样值文件
 % fileDir = '\\192.168.3.102\e\data\ChNum_2_m2h3\';

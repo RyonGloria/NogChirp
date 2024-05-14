@@ -157,6 +157,7 @@ classdef NogChirpDecoder < LoraDecoder
 
             % dechirp 做 FFT，获得最大峰值即为信道矩阵的信息
             signal = preambleSignalTemp((obj.SFDPos + 2.25) * dine + 1 : end);
+            % FFT_plot(signal, obj.loraSet, obj.cfoDownchirp, 20);
             for window_i = 1 : obj.loraSet.payloadNum
                 windowChirp = signal((window_i - 1) * dine + 1 : window_i * dine);
                 % filename = sprintf('409TwoCHOne_Chirp_%d.mat', window_i);
@@ -328,7 +329,7 @@ classdef NogChirpDecoder < LoraDecoder
         % -- NoiseFloor: 底噪
         % 结果: groupInfo
         %% ✔
-        function [groupInfo] = powerLagerNF(obj, signalInfo, NoiseFloor)
+        function [groupInfo] = powerLagerNF(~, signalInfo, NoiseFloor)
             peak = signalInfo(1, :);
             pos = signalInfo(2, :);
             PeakLen = length(signalInfo(1, :));
@@ -628,7 +629,7 @@ classdef NogChirpDecoder < LoraDecoder
             end
             BinWithVariance = [varianceSet; signalPeakInfo(2, : )];  % [variance; bin]
             % obj.cfo/obj.loraSet.bw * fft_xTmp + round(obj.winOffset) / dineTmp * fft_xTmp + 0.25 * dineTmp * fft_xTmp
-
+            % disp(varianceSet);
             [~, index] = min(BinWithVariance(1, : ));
             obj.BinRecord = [obj.BinRecord BinWithVariance(2, index) - 1];  % Bin 值减去1 指：(1 ~ 1024) --> (0 ~ 1023)
             % disp(['BinRecord: ', num2str(obj.BinRecord)]);

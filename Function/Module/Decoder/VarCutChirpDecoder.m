@@ -139,7 +139,7 @@ classdef VarCutChirpDecoder < LoraDecoder
                     otherPreambleStartPos = round(obj.detectedPktAll{j, 5} - 10);
                     diff_val = otherPreambleStartPos - targetPktStartPos;
                     overlapStartPos = max(diff_val + 1, 1);                % 重叠的开始位置
-                    overlapEndPos = min(diff_val + preamble_len + 1, 23);  % 重叠的结束位置
+                    overlapEndPos = min(diff_val + preamble_len + 1, obj.loraSet.payloadNum);  % 重叠的结束位置
                     overlapIndices = overlapStartPos:overlapEndPos;        % 重叠的位置
                     binTmp = obj.detectedPktAll{j, 2};                     % 冲突信号的 preamble bin
                     otherBin = mod(round(binTmp + cfoTmp / obj.loraSet.bw * obj.loraSet.fft_x ...
@@ -176,14 +176,13 @@ classdef VarCutChirpDecoder < LoraDecoder
             binRmTmp = obj.binRm{pkt_i};  % 需要去除的冲突信号的 preamble bin
 
             signal = preambleSignalTemp((obj.SFDPos + 2.25) * dineTmp + 1 : end);  % 仅包含数据包部分的目标信号
-
+            % FFT_plot(signal, obj.loraSet, obj.idealDownchirp, 33);
             for window_i = 1 : obj.loraSet.payloadNum
                 windowChirp = signal((window_i - 1) * dineTmp + 1 : window_i * dineTmp);  % symbol
 
                 windowChirp = obj.filterOutOtherCH(windowChirp, 50, 0, obj.loraSet.bw / 2);    % 只保留目标信号所在的信道（针对重叠信道问题）
                 %% 对齐窗口能量方差
                 obj = obj.decodeVarofPower(windowChirp, 1/16, 16, binRmTmp{window_i});    % 信号, 切分窗口大小, 步长, 错误 Bin
-
             end
         end
 
@@ -202,8 +201,10 @@ classdef VarCutChirpDecoder < LoraDecoder
             signalPeakInfo = obj.findpeaksWithShift(dechirp_fft, fft_xTmp);   % 找峰值
             signalPeakInfo = obj.powerExtraction(signalPeakInfo, 1);          % 滤掉低于能量阈值（preamble 1/2能量）的峰值
             for i = 1 : length(binRmTmp)
-                disp(binRmTmp(i));
-                signalPeakInfo(:, signalPeakInfo(2, :) == binRmTmp(i)) = [];  % 去除其它包的 preamble 值
+                % Remove other packet's preamble values
+                binToRemove = [binRmTmp(i), binRmTmp(i)+1, binRmTmp(i)-1];
+                signalPeakInfo(:, ismember(signalPeakInfo(2, :), binToRemove)) = [];
+                % signalPeakInfo(:, signalPeakInfo(2, :) == binRmTmp(i)) = [];  % 去除其它包的 preamble 值
             end
             % disp(['Candicate Bins: [', num2str(signalPeakInfo(2,:)), ']']);
 

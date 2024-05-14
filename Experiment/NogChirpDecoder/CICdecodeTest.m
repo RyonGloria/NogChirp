@@ -4,18 +4,12 @@ fclose all;     %关闭所有matlab打开的文件
 tic;            % 打开计时器
 
 % 所有采样信号的基本参数信息枚举
-bw = 125e3;
+bw = 250e3;
 sf = 10;
 samplesRate = 2e6;
-round = 40;
-record = cell(3, 1);  % 设置元胞数组记录结果
-% SNR = 5;
-result = cell(1, 0);
-
 % 读取配置和验证文件
 [loraSet] = readLoraSet('GeneralConfig.json', sf, bw, samplesRate);
-loraSet.payloadNum = 23; % payload数目
-SignalLength = loraSet.dine*80;  % 整个信号的最大长度
+loraSet.payloadNum = 33; % payload数目
 
 % 初始化decoder
 CICDecoder = CICDecoder(loraSet);
@@ -23,21 +17,15 @@ CICDecoder = CICDecoder(loraSet);
 % fileDir = 'd:\data\ChNum_2_m2h3\';
 % fileDir = 'd:\data\Collision-2_CH-2\';
 
-fileDir = 'D:\data\SameBinInterfer\';
+fileDir = 'd:\data\1_17indoor\FFT_jun\';
 fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
-[signal1] = readSignalFile(fileDir, fileIn(2));
-fileDir = 'D:\data\SameBinInterfer\';
-fileIn = dir(fullfile(fileDir, '*.sigmf-data'));
-[signal2] = readSignalFile(fileDir, fileIn(1));
+[signal] = readSignalFile(fileDir, fileIn(3));
 
-signal1 = [signal1 zeros(1, 50000)];
-signal2 = [zeros(1, 50000) signal2];
+off = randi([1, loraSet.dine], 1, 1);  % 窗口内随机off
+disp(off);
+paddedSignal = [zeros(1, off) signal];
 
-signal = signal1 + signal2;
-
-
-emptySignal = zeros(1, 10000); % create an array of zeros with the specified length
-paddedSignal = [emptySignal signal]; % concatenate the empty signal with the original signal
+% [938 14 1022 2 954 130 302 182 794 462 779 559 990 158 561 922 896 1004 839 571 35 595 493 981 749 151 672 503 788 952 260 846 992 ]
 
 CICDecoder = CICDecoder.decode(paddedSignal);
 
